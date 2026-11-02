@@ -1,6 +1,7 @@
 //! pixfer-core — the screen-to-camera light link: multicolor block frames,
 //! Reed-Solomon(255,223) FEC, CRC32 integrity, and auto-zip transfer planning.
 
+pub mod audit;
 pub mod calibration;
 pub mod compress;
 pub mod config;
@@ -18,6 +19,7 @@ pub mod policy;
 pub mod protocol;
 pub mod queue;
 pub mod reassembly;
+pub mod resilience;
 pub mod rs;
 pub mod scheduler;
 pub mod session;
@@ -28,6 +30,7 @@ pub mod timing;
 pub mod transfer;
 pub mod worker;
 
+pub use audit::{AuditEntry, AuditLog};
 pub use calibration::{Calibration, CalibrationProfile, CalibrationRegistry};
 pub use compress::{is_zip, unzip_first, zip_bytes, CompressError};
 pub use config::{Config, ConfigBuilder, ConfigProfile};
@@ -54,6 +57,7 @@ pub use policy::{
 pub use protocol::{Frame, FrameKind, Protocol, ProtocolError};
 pub use queue::WorkQueue;
 pub use reassembly::Reassembler;
+pub use resilience::{BreakerState, CircuitBreaker, DegradationMode, HealthScore};
 pub use rs::{RSError, ReedSolomon, RS_K, RS_N, RS_T};
 pub use scheduler::{
     FifoPolicy, PriorityPolicy, RoundRobinPolicy, SchedulerPolicy, TransferJob, TransferScheduler,
