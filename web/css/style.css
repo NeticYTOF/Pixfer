@@ -188,6 +188,26 @@ body {
   background: var(--accent);
 }
 
+/* ---------- per-view heroes: send vs receive look different ---------- */
+/* TX: the flashing light box is the hero (big, centered), camera preview
+   stays a small corner box (it only reads the peer's Ack/Nak). */
+#tx-view .light-canvas { width: min(92vw, 560px); }
+#tx-view .cam-preview { width: 170px; }
+
+/* RX: the camera viewfinder is the hero (big, centered), and the emit box
+   (Pong/Ack/Nak) is a small corner box. */
+#rx-view .cam-preview {
+  position: static;
+  width: min(80vw, 520px);
+  aspect-ratio: 4 / 3;
+}
+#rx-view .light-canvas {
+  position: absolute;
+  bottom: 70px;
+  right: 16px;
+  width: min(30vw, 200px);
+}
+
 /* ---------- mobile ---------- */
 @media (max-width: 640px) {
   .landing-inner { flex-direction: column; gap: 24px; }
@@ -200,5 +220,6 @@ body {
   }
   .mode-btn { min-width: 46%; }
   .cam-preview { width: 120px; }
+  #rx-view .cam-preview { width: min(92vw, 520px); }
   .cal input[type="range"] { width: 84px; }
 }

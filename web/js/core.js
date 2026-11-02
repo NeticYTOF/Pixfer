@@ -471,6 +471,17 @@ export function decodeBlocks(blocks) {
   };
 }
 
+// 3-bit NOT of every block value (v ^ 7). The TX side flashes each frame
+// alternating between its normal and inverted rendering, so a camera that
+// captures the inverted phase inverts the sampled blocks before decoding.
+// Double inversion is the identity, and threshold sampling is bit-flip
+// symmetric, so decoding after inversion recovers the exact frame.
+export function inverseBlocks(blocks) {
+  const out = new Uint8Array(blocks.length);
+  for (let i = 0; i < blocks.length; i++) out[i] = blocks[i] ^ 7;
+  return out;
+}
+
 // ---------- transfer planning (mirrors transfer.rs) ----------
 // Effective multicolor throughput estimate (~2 MB/s after FEC + sync overhead).
 export const DEFAULT_THROUGHPUT = 2_000_000;

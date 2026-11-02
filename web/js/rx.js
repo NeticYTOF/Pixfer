@@ -48,7 +48,15 @@ export function mountRx(root, fflate, onBack) {
       if (al.found && al.quality >= ALIGN_MIN_QUALITY) aligned = al;
     }
     const opts = samplerOpts();
-    const dec = core.decodeBlocks(sampleBlocks(v, opts));
+    const blocks = sampleBlocks(v, opts);
+    let dec = core.decodeBlocks(blocks);
+    if (!dec.ok) {
+      // The sender's screen flashes frames (normal/inverted phases). A
+      // capture may land on the inverted phase; invert the sampled blocks
+      // and try decoding again.
+      const decInv = core.decodeBlocks(core.inverseBlocks(blocks));
+      if (decInv.ok) dec = decInv;
+    }
     if (dec.ok) {
       route(dec.frame, dec.ok);
     } else if (session && totalChunks > 0) {
@@ -57,7 +65,7 @@ export function mountRx(root, fflate, onBack) {
       // so the sender retransmits it — that is how lost packets are recovered.
       session.onChunkErr(lowestMissing());
       const nf = session.nextFrame();
-      if (nf) emitter.setBlocks(core.renderBlocks(nf));
+      if (nf) emitter.setFrame(nf);
     }
   })
     .then((h) => {
@@ -119,7 +127,7 @@ export function mountRx(root, fflate, onBack) {
     if (f.kind === "Ping") {
       ensureSession(f.sessionId, f.totalChunks);
       const nf = session.nextFrame();
-      if (nf) emitter.setBlocks(core.renderBlocks(nf));
+      if (nf) emitter.setFrame(nf); // flash the Pong
     } else if (f.kind === "Chunk") {
       ensureSession(f.sessionId, f.totalChunks);
       if (ok) {
@@ -130,7 +138,7 @@ export function mountRx(root, fflate, onBack) {
         session.onChunkErr(f.chunkIdx);
       }
       const nf = session.nextFrame();
-      if (nf) emitter.setBlocks(core.renderBlocks(nf));
+      if (nf) emitter.setFrame(nf); // flash the Ack/Nak
       const got = chunks.filter(Boolean).length;
       if (totalChunks > 0) {
         progressFill.style.width = (got / totalChunks) * 100 + "%";

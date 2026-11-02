@@ -91,14 +91,27 @@ export function sampleBlocks(video, opts = {}) {
   return blocks;
 }
 
+// Blink period for flashing frames: 50 ms per phase → a 10 Hz full blink
+// cycle. Slow enough for camera exposure to resolve each phase cleanly.
+const FLASH_PHASE_MS = 50;
+
 // Emit a block grid through a screen. The 270x480 grid is stretched to fill
 // the whole canvas (rectangular blocks), so the display uses the full box
 // instead of a letterboxed square. Repaint happens only when the blocks or
 // the canvas size change — no per-frame pixel work in the hot loop.
+//
+// `setFrame(frame)` enables "proper flashing QR-code" output: the emitter
+// alternates between the frame and its 3-bit-inverted rendering, giving the
+// peer's camera a strong temporal sync signal. The receiver recovers the
+// frame from either phase via core.inverseBlocks (see decode fallbacks in
+// tx.js / rx.js).
 export function makeEmitter(canvas) {
   const ctx = canvas.getContext("2d");
   const pal = core.PALETTE;
-  let blocksRef = null;
+  let blocksRef = null; // static (idle) blocks
+  let flash = null; // { normal, inverse } when flashing a session frame
+  let phase = false; // false = normal, true = inverted
+  let lastToggle = 0;
   let lastW = 0;
   let lastH = 0;
   let dirty = false;
@@ -107,7 +120,8 @@ export function makeEmitter(canvas) {
   function paint() {
     const w = canvas.width;
     const h = canvas.height;
-    if (!blocksRef || w === 0 || h === 0) return;
+    const active = flash ? (phase ? flash.inverse : flash.normal) : blocksRef;
+    if (!active || w === 0 || h === 0) return;
     if (w === lastW && h === lastH && !dirty) return;
     lastW = w;
     lastH = h;
@@ -118,7 +132,7 @@ export function makeEmitter(canvas) {
     const bh = h / core.GRID_H;
     for (let r = 0; r < core.GRID_H; r++) {
       for (let c = 0; c < core.GRID_W; c++) {
-        const col = pal[blocksRef[r * core.GRID_W + c]];
+        const col = pal[active[r * core.GRID_W + c]];
         const x0 = Math.floor(c * bw);
         const x1 = Math.floor((c + 1) * bw);
         const y0 = Math.floor(r * bh);
@@ -141,12 +155,34 @@ export function makeEmitter(canvas) {
 
   function tick() {
     if (!running) return;
+    if (flash) {
+      const now = performance.now();
+      if (now - lastToggle >= FLASH_PHASE_MS) {
+        lastToggle = now;
+        phase = !phase;
+        dirty = true; // repaint only on phase flips, not every rAF tick
+      }
+    }
     paint();
     requestAnimationFrame(tick);
   }
 
   function setBlocks(blocks) {
     blocksRef = blocks;
+    flash = null;
+    dirty = true;
+    if (!running) {
+      running = true;
+      requestAnimationFrame(tick);
+    }
+  }
+
+  // Flash a protocol frame: render it and its 3-bit inverse alternately.
+  function setFrame(frame) {
+    const normal = core.renderBlocks(frame);
+    flash = { normal, inverse: core.inverseBlocks(normal) };
+    phase = false;
+    lastToggle = performance.now();
     dirty = true;
     if (!running) {
       running = true;
@@ -156,8 +192,10 @@ export function makeEmitter(canvas) {
 
   return {
     setBlocks,
+    setFrame,
     stop() {
       running = false;
+      flash = null;
     },
   };
 }

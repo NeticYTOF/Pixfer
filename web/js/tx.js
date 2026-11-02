@@ -96,7 +96,15 @@ export function mountTx(root, fflate, onBack) {
             const al = detectAlignment(video);
             if (al.found && al.quality >= ALIGN_MIN_QUALITY) aligned = al;
           }
-          const dec = core.decodeBlocks(sampleBlocks(video, samplerOpts()));
+          const blocks = sampleBlocks(video, samplerOpts());
+          let dec = core.decodeBlocks(blocks);
+          if (!dec.ok) {
+            // The peer's screen flashes frames (normal/inverted phases). A
+            // capture may land on the inverted phase; invert the sampled
+            // blocks and try decoding again.
+            const decInv = core.decodeBlocks(core.inverseBlocks(blocks));
+            if (decInv.ok) dec = decInv;
+          }
           if (dec.ok) route(dec.frame);
         });
         pump();
@@ -142,11 +150,11 @@ export function mountTx(root, fflate, onBack) {
     }
     if (f.kind === "Chunk") {
       f.payload = chunkPayload(f.chunkIdx);
-      emitter.setBlocks(core.renderBlocks(f));
+      emitter.setFrame(f); // flash the chunk (normal/inverted phases)
       clearTimeout(ackTimer);
       ackTimer = setTimeout(onAckTimeout, ACK_TIMEOUT_MS);
     } else {
-      emitter.setBlocks(core.renderBlocks(f));
+      emitter.setFrame(f); // flash Ping/End too
     }
   }
 
@@ -155,7 +163,7 @@ export function mountTx(root, fflate, onBack) {
     const r = session.onTimeout();
     if (r) {
       r.payload = chunkPayload(r.chunkIdx);
-      emitter.setBlocks(core.renderBlocks(r));
+      emitter.setFrame(r);
       ackTimer = setTimeout(onAckTimeout, ACK_TIMEOUT_MS);
     } else {
       setStatus("no ack — transfer failed after retries");
