@@ -15,8 +15,11 @@ pub mod modulation;
 pub mod pipeline;
 pub mod policy;
 pub mod protocol;
+pub mod queue;
+pub mod reassembly;
 pub mod rs;
 pub mod session;
+pub mod state;
 pub mod stats;
 pub mod telemetry;
 pub mod timing;
@@ -46,8 +49,11 @@ pub use policy::{
     RetryPolicy, RetryScheduler,
 };
 pub use protocol::{Frame, FrameKind, Protocol, ProtocolError};
+pub use queue::WorkQueue;
+pub use reassembly::Reassembler;
 pub use rs::{RSError, ReedSolomon, RS_K, RS_N, RS_T};
 pub use session::{Role, SessionState, TransferSession};
+pub use state::{FsmEvent, FsmState, TransferFsm};
 pub use stats::{SessionStatsMap, TransferStats};
 pub use telemetry::{TelemetryBus, TelemetryEvent, TelemetryRecorder};
 pub use timing::{Clock, Pacer, SystemClock};
