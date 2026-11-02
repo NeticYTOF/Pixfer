@@ -122,4 +122,83 @@ impl IntegrityChecker {
             };
         }
         let crc = self.update(block);
-        IntegrityResult::Valid(
+        IntegrityResult::Valid(ChecksumReport::new(crc, self.length, false))
+    }
+
+    /// Compute the running CRC32 without mutating the checker.
+    ///
+    /// `crc32fast::Hasher::finalize` consumes the hasher, so we clone it
+    /// to read the current CRC non-destructively.
+    pub fn digest(&self) -> u32 {
+        self.hasher.clone().finalize()
+    }
+
+    /// Accepted byte count (saturating).
+    pub fn length(&self) -> u64 {
+        self.length
+    }
+
+    /// Reset the checker to its empty state.
+    pub fn reset(&mut self) {
+        self.hasher = crc32fast::Hasher::new();
+        self.length = 0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn known_crc32_vector() {
+        // zlib: crc32("123456789") == 0xCBF43926
+        let mut c = IntegrityChecker::new();
+        let crc = c.update(b"123456789");
+        assert_eq!(crc, 0xCBF43926);
+    }
+
+    #[test]
+    fn incremental_equals_oneshot() {
+        let mut a = IntegrityChecker::new();
+        let oneshot = a.update(b"hello world");
+        let mut b = IntegrityChecker::new();
+        b.update(b"hello ");
+        let incr = b.update(b"world");
+        assert_eq!(oneshot, incr);
+    }
+
+    #[test]
+    fn update_block_requires_full_grid() {
+        let mut c = IntegrityChecker::new();
+        // A block grid is GRID_W * GRID_H = 270 * 480 = 129600 bytes.
+        let full = vec![0x05u8; BLOCK_GRID_LEN];
+        let r = c.update_block(&full);
+        assert!(r.report().is_some());
+        let short = vec![0x05u8; 10];
+        let r2 = c.update_block(&short);
+        match r2 {
+            IntegrityResult::InvalidBlockLength { expected, actual } => {
+                assert_eq!(expected, BLOCK_GRID_LEN);
+                assert_eq!(actual, 10);
+            }
+            _ => panic!("expected InvalidBlockLength"),
+        }
+    }
+
+    #[test]
+    fn reset_clears_state() {
+        let mut c = IntegrityChecker::new();
+        c.update(b"123456789");
+        c.reset();
+        assert_eq!(c.length(), 0);
+        assert_eq!(c.digest(), crc32fast::Hasher::new().finalize());
+    }
+
+    #[test]
+    fn report_shape() {
+        let mut c = IntegrityChecker::new();
+        let report = c.update(b"abc");
+        let r = ChecksumReport::new(report, c.length(), true);
+        assert_eq!(r.length_usize(), 3);
+    }
+}

@@ -14,6 +14,7 @@ pub mod features;
 pub mod framing;
 pub mod gf256;
 pub mod hal;
+pub mod integrity;
 pub mod link_budget;
 pub mod logging;
 pub mod metrics;
@@ -29,6 +30,7 @@ pub mod scheduler;
 pub mod session;
 pub mod state;
 pub mod stats;
+pub mod sync;
 pub mod telemetry;
 pub mod timing;
 pub mod transfer;
@@ -51,6 +53,7 @@ pub use errors::{ErrorContext, PixferError, Severity};
 pub use features::{standard_features, Feature, FeatureRegistry};
 pub use framing::{FrameBuilder, FramePool, FrameValidator};
 pub use hal::{CameraFrame, CameraHal, DisplayHal};
+pub use integrity::{ChecksumReport, IntegrityChecker, IntegrityResult, BLOCK_GRID_LEN};
 pub use link_budget::{default_capacity, AllocationSummary, BudgetPlan, FlowRequest, LinkBudget};
 pub use logging::{
     DefaultLog, LogLevel, LogRecord, LogSink, Logger, MemorySink, SharedSink, WriterSink,
@@ -78,6 +81,7 @@ pub use scheduler::{
 pub use session::{Role, SessionState, TransferSession};
 pub use state::{FsmEvent, FsmState, TransferFsm};
 pub use stats::{SessionStatsMap, TransferStats};
+pub use sync::{SyncDetector, SyncPattern};
 pub use telemetry::{TelemetryBus, TelemetryEvent, TelemetryRecorder};
 pub use timing::{Clock, Pacer, SystemClock};
 pub use validation::{
