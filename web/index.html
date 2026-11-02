@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0b0e14" />
 <title>Pixfer</title>
 <link rel="stylesheet" href="css/style.css" />
-<script src="https://unpkg.com/fflate@0.8.1/dist/index.umd.js"></script>
+<script src="https://unpkg.com/fflate@0.8.1/umd/index.js"></script>
 </head>
 <body>
 <main id="app">
@@ -93,13 +93,13 @@
   function startTx() {
     const view = views.tx;
     if (view._pixfer) view._pixfer.stop();
-    view._pixfer = mountTx(view, window.FFlate, () => show("landing"));
+    view._pixfer = mountTx(view, window.fflate, () => show("landing"));
     show("tx");
   }
   function startRx() {
     const view = views.rx;
     if (view._pixfer) view._pixfer.stop();
-    view._pixfer = mountRx(view, window.FFlate, () => show("landing"));
+    view._pixfer = mountRx(view, window.fflate, () => show("landing"));
     show("rx");
   }
 
