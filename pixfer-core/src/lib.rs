@@ -12,6 +12,7 @@ pub mod checksum;
 pub mod chunk_index;
 pub mod chunk_prioritizer;
 pub mod chunk_reorder;
+pub mod color_adaptive;
 pub mod color_calibration;
 pub mod color_palette;
 pub mod color_quantizer;
@@ -37,6 +38,7 @@ pub mod link_budget;
 pub mod link_fingerprint;
 pub mod link_matrix;
 pub mod link_monitor;
+pub mod link_probe;
 pub mod link_quality;
 pub mod link_scorer;
 pub mod link_stats;
@@ -78,6 +80,7 @@ pub mod transfer_orchestrator;
 pub mod transfer_plan;
 pub mod transfer_rollback;
 pub mod transfer_session_ext;
+pub mod transfer_watchdog;
 pub mod ui_state;
 pub mod validation;
 pub mod worker;
@@ -98,6 +101,7 @@ pub use checksum::{
 pub use chunk_index::ChunkIndex;
 pub use chunk_prioritizer::{ChunkPrioritizer, PendingChunk};
 pub use chunk_reorder::ChunkReorder;
+pub use color_adaptive::{recalibrate, AdaptivePalette, MeasuredColor};
 pub use color_calibration::ColorCalibration;
 pub use color_palette::{color_for_value, value_for_color, Color};
 pub use color_quantizer::{quantize, quantize_with_tolerance};
@@ -126,6 +130,7 @@ pub use link_budget::{default_capacity, AllocationSummary, BudgetPlan, FlowReque
 pub use link_fingerprint::{compute_link_fingerprint, same_link, LinkFingerprint};
 pub use link_matrix::{LinkMatrix, MetricCell};
 pub use link_monitor::LinkMonitor;
+pub use link_probe::{LinkProbe, ProbeResult};
 pub use link_quality::{quality_score, LinkQuality, QualityMonitor};
 pub use link_scorer::{LinkScorer, ScoreInputs};
 pub use link_stats::LinkStats;
@@ -182,6 +187,7 @@ pub use transfer_orchestrator::{TransferOrchestrator, TransferOutcome};
 pub use transfer_plan::{build_plan, TransferPlan};
 pub use transfer_rollback::{ReassemblySnapshot, TransferRollback};
 pub use transfer_session_ext::TransferSessionExt;
+pub use transfer_watchdog::{TransferWatchdog, WatchdogState};
 pub use ui_state::{UiState, UiStateMachine};
 pub use validation::{
     ConfigValidator, FrameValidator2, PayloadValidator, Validator, ValidatorRegistry,
