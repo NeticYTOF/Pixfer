@@ -11,6 +11,7 @@ pub mod checksum;
 pub mod chunk_index;
 pub mod color_calibration;
 pub mod color_palette;
+pub mod color_quantizer;
 pub mod compress;
 pub mod config;
 pub mod congestion;
@@ -28,6 +29,7 @@ pub mod hal;
 pub mod integrity;
 pub mod link_budget;
 pub mod link_matrix;
+pub mod link_monitor;
 pub mod link_quality;
 pub mod link_stats;
 pub mod logging;
@@ -63,6 +65,7 @@ pub mod timing;
 pub mod transfer;
 pub mod transfer_orchestrator;
 pub mod transfer_plan;
+pub mod transfer_session_ext;
 pub mod ui_state;
 pub mod validation;
 pub mod worker;
@@ -82,6 +85,7 @@ pub use checksum::{
 pub use chunk_index::ChunkIndex;
 pub use color_calibration::ColorCalibration;
 pub use color_palette::{color_for_value, value_for_color, Color};
+pub use color_quantizer::{quantize, quantize_with_tolerance};
 pub use compress::{is_zip, unzip_first, zip_bytes, CompressError};
 pub use config::{Config, ConfigBuilder, ConfigProfile};
 pub use congestion::{
@@ -100,6 +104,7 @@ pub use hal::{CameraFrame, CameraHal, DisplayHal};
 pub use integrity::{ChecksumReport, IntegrityChecker, IntegrityResult, BLOCK_GRID_LEN};
 pub use link_budget::{default_capacity, AllocationSummary, BudgetPlan, FlowRequest, LinkBudget};
 pub use link_matrix::{LinkMatrix, MetricCell};
+pub use link_monitor::LinkMonitor;
 pub use link_quality::{quality_score, LinkQuality, QualityMonitor};
 pub use link_stats::LinkStats;
 pub use logging::{
@@ -148,6 +153,7 @@ pub use throughput_meter::ThroughputMeter2;
 pub use timing::{Clock, Pacer, SystemClock};
 pub use transfer_orchestrator::{TransferOrchestrator, TransferOutcome};
 pub use transfer_plan::{build_plan, TransferPlan};
+pub use transfer_session_ext::TransferSessionExt;
 pub use ui_state::{UiState, UiStateMachine};
 pub use validation::{
     ConfigValidator, FrameValidator2, PayloadValidator, Validator, ValidatorRegistry,
