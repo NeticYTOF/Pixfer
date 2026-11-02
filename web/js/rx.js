@@ -32,7 +32,7 @@ export function mountRx(root, fflate, onBack) {
 
   openCamera(video, (v) => {
     drawCam(v, camCanvas);
-    const dec = core.decodeBlocks(sampleBlocks(v, camOpts(root, "rx"));
+    const dec = core.decodeBlocks(sampleBlocks(v, camOpts(root, "rx")));
     if (dec.ok) route(dec.frame, dec.ok);
   })
     .then((h) => {
@@ -109,10 +109,10 @@ export function mountRx(root, fflate, onBack) {
     if (isZip(out)) {
       const files = fflate.unzipSync(out);
       const name = Object.keys(files)[0];
-      downloadBlob(new Blob([files[name]], { type: "application/octet-stream" }, name);
+      downloadBlob(new Blob([files[name]], { type: "application/octet-stream" }), name);
       statusEl.textContent = "saved " + name;
     } else {
-      downloadBlob(new Blob([out], { type: "application/octet-stream" }, "pixfer-file.bin");
+      downloadBlob(new Blob([out], { type: "application/octet-stream" }), "pixfer-file.bin");
       statusEl.textContent = "saved";
     }
   }
