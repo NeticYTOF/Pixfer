@@ -18,6 +18,7 @@ pub mod errors;
 pub mod features;
 pub mod fingerprint;
 pub mod frame_pool;
+pub mod frame_validator_ext;
 pub mod framing;
 pub mod gf256;
 pub mod hal;
@@ -37,6 +38,7 @@ pub mod progress;
 pub mod protocol;
 pub mod queue;
 pub mod reassembly;
+pub mod reassembly_ext;
 pub mod reliability;
 pub mod resilience;
 pub mod retransmit;
@@ -51,10 +53,12 @@ pub mod sync;
 pub mod telemetry;
 pub mod thermal;
 pub mod throughput_estimator;
+pub mod throughput_meter;
 pub mod timing;
 pub mod transfer;
 pub mod transfer_orchestrator;
 pub mod transfer_plan;
+pub mod ui_state;
 pub mod validation;
 pub mod worker;
 
@@ -82,6 +86,7 @@ pub use errors::{ErrorContext, PixferError, Severity};
 pub use features::{standard_features, Feature, FeatureRegistry};
 pub use fingerprint::{fnv1a64, FileFingerprint, FingerprintIndex};
 pub use frame_pool::ChunkFramePool;
+pub use frame_validator_ext::{FrameValidation, FrameValidatorExt};
 pub use framing::{FrameBuilder, FramePool, FrameValidator};
 pub use hal::{CameraFrame, CameraHal, DisplayHal};
 pub use integrity::{ChecksumReport, IntegrityChecker, IntegrityResult, BLOCK_GRID_LEN};
@@ -110,6 +115,7 @@ pub use progress::{ProgressSnapshot, ProgressTracker};
 pub use protocol::{Frame, FrameKind, Protocol, ProtocolError};
 pub use queue::WorkQueue;
 pub use reassembly::Reassembler;
+pub use reassembly_ext::ReassemblyExt;
 pub use reliability::{ReliabilitySnapshot, ReliabilityTracker};
 pub use resilience::{BreakerState, CircuitBreaker, DegradationMode, HealthScore};
 pub use retransmit::{RetransmitEntry, RetransmitScheduler};
@@ -128,9 +134,11 @@ pub use thermal::{
     classify, pick_thermal_budget, thermal_throttle, ThermalBudget, ThermalGovernor, ThermalState,
 };
 pub use throughput_estimator::{pick_estimator, ThroughputEstimator};
+pub use throughput_meter::ThroughputMeter2;
 pub use timing::{Clock, Pacer, SystemClock};
 pub use transfer_orchestrator::{TransferOrchestrator, TransferOutcome};
 pub use transfer_plan::{build_plan, TransferPlan};
+pub use ui_state::{UiState, UiStateMachine};
 pub use validation::{
     ConfigValidator, FrameValidator2, PayloadValidator, Validator, ValidatorRegistry,
 };
