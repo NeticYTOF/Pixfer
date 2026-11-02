@@ -10,6 +10,7 @@ pub mod checksum;
 pub mod compress;
 pub mod config;
 pub mod congestion;
+pub mod dedup;
 pub mod diagnostics;
 pub mod errors;
 pub mod features;
@@ -22,9 +23,11 @@ pub mod link_budget;
 pub mod logging;
 pub mod metrics;
 pub mod modulation;
+pub mod observability;
 pub mod pipeline;
 pub mod policy;
 pub mod power;
+pub mod progress;
 pub mod protocol;
 pub mod queue;
 pub mod reassembly;
@@ -58,6 +61,7 @@ pub use config::{Config, ConfigBuilder, ConfigProfile};
 pub use congestion::{
     pick_aimd, AimdController, Allocation, CapacityProbe, CongestionState, Flow, FlowScheduler,
 };
+pub use dedup::{decide, DedupDecision, DedupSet, DedupStage};
 pub use diagnostics::{Diagnostic, Diagnostics, LinkHealthProbe};
 pub use errors::{ErrorContext, PixferError, Severity};
 pub use features::{standard_features, Feature, FeatureRegistry};
@@ -73,6 +77,7 @@ pub use metrics::{Counter, Gauge, Histogram, Metrics, ThroughputMeter};
 pub use modulation::{
     pick_strategy, CskStrategy, Modulation, ModulationStrategy, OokStrategy, VppmStrategy,
 };
+pub use observability::Observability;
 pub use pipeline::{
     ChunkStage, CompressStage, EncodeStage, Pipeline, PipelineContext, PipelineError,
     PipelineStage, ValidateStage,
@@ -82,6 +87,7 @@ pub use policy::{
     RetryPolicy, RetryScheduler,
 };
 pub use power::{pick_power_profile, PowerBudget, PowerGovernor, PowerProfile, PowerReport};
+pub use progress::{ProgressSnapshot, ProgressTracker};
 pub use protocol::{Frame, FrameKind, Protocol, ProtocolError};
 pub use queue::WorkQueue;
 pub use reassembly::Reassembler;
