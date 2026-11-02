@@ -3,6 +3,7 @@
 
 pub mod adaptive_rate;
 pub mod audit;
+pub mod bandwidth_allocator;
 pub mod battery;
 pub mod benchmark;
 pub mod calibration;
@@ -21,6 +22,7 @@ pub mod errors;
 pub mod features;
 pub mod fingerprint;
 pub mod frame_builder_ext;
+pub mod frame_pacer;
 pub mod frame_pool;
 pub mod frame_validator_ext;
 pub mod framing;
@@ -31,6 +33,7 @@ pub mod link_budget;
 pub mod link_matrix;
 pub mod link_monitor;
 pub mod link_quality;
+pub mod link_scorer;
 pub mod link_stats;
 pub mod logging;
 pub mod metrics;
@@ -74,6 +77,7 @@ pub use adaptive_rate::{
     pick_rate_config, AdaptiveRateController, RateAdaptationResult, RateDirection,
 };
 pub use audit::{AuditEntry, AuditLog};
+pub use bandwidth_allocator::{allocator_from_budget, AllocRequest, BandwidthAllocator};
 pub use battery::{BatteryGovernor, BatteryModel, BatteryState};
 pub use benchmark::{BenchResult, Benchmark};
 pub use calibration::{Calibration, CalibrationProfile, CalibrationRegistry};
@@ -97,6 +101,7 @@ pub use errors::{ErrorContext, PixferError, Severity};
 pub use features::{standard_features, Feature, FeatureRegistry};
 pub use fingerprint::{fnv1a64, FileFingerprint, FingerprintIndex};
 pub use frame_builder_ext::FrameBuilder2;
+pub use frame_pacer::FramePacer;
 pub use frame_pool::ChunkFramePool;
 pub use frame_validator_ext::{FrameValidation, FrameValidatorExt};
 pub use framing::{FrameBuilder, FramePool, FrameValidator};
@@ -106,6 +111,7 @@ pub use link_budget::{default_capacity, AllocationSummary, BudgetPlan, FlowReque
 pub use link_matrix::{LinkMatrix, MetricCell};
 pub use link_monitor::LinkMonitor;
 pub use link_quality::{quality_score, LinkQuality, QualityMonitor};
+pub use link_scorer::{LinkScorer, ScoreInputs};
 pub use link_stats::LinkStats;
 pub use logging::{
     DefaultLog, LogLevel, LogRecord, LogSink, Logger, MemorySink, SharedSink, WriterSink,
