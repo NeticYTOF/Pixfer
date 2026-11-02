@@ -43,7 +43,7 @@ mod tests {
 
     #[test]
     fn pool_starts_full() {
-        let mut p = ChunkFramePool::new(4);
+        let p = ChunkFramePool::new(4);
         assert_eq!(p.idle_count(), 4);
     }
 
