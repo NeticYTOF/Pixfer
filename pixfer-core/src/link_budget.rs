@@ -104,6 +104,11 @@ impl LinkBudget {
     pub fn capacity(&self) -> f64 {
         self.capacity
     }
+
+    /// The number of flows in this budget.
+    pub fn flow_count(&self) -> usize {
+        self.flows.len()
+    }
 }
 
 /// Pick the default link capacity from a config profile (the "it depends on

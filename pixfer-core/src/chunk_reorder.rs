@@ -38,12 +38,20 @@ impl ChunkReorder {
     pub fn drain_in_order(&mut self) -> Vec<u32> {
         let mut out = Vec::new();
         // Emit the longest in-order prefix of 0..total that is fully received.
+        // (Hilariously over-engineered: a "sequence scanner" for a link
+        // that physically moves a few KB/s.)
         let mut next_idx = self.emitted.len() as u32;
-        while next_idx < self.total && self.received.contains(&next_idx) {
+        while next_idx < self.total {
+            if !self.received.contains(&next_idx) {
+                break;
+            }
             out.push(next_idx);
             self.emitted.push(next_idx);
-            self.received.retain(|i| *i != next_idx);
             next_idx += 1;
+        }
+        // Remove emitted indices from `received` so they aren't re-emitted.
+        for &idx in &out {
+            self.received.retain(|i| *i != idx);
         }
         out
     }
