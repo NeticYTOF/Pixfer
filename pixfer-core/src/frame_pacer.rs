@@ -9,6 +9,7 @@ use crate::timing::Pacer;
 ///
 /// Wraps `Pacer` with fps-based configuration and rolling jitter
 /// tracking so downstream code can report how steady the emission is.
+#[derive(Debug)]
 pub struct FramePacer {
     base: Pacer,
     /// Target frames per second.

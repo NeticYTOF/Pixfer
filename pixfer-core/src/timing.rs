@@ -4,6 +4,7 @@
 
 /// Camera frame period assumptions (ms). The pacer uses these to compute
 /// the minimum dwell a frame needs to be captured.
+#[derive(Debug, Clone, Copy)]
 pub struct Pacer {
     /// Camera frame period in ms (1000/fps).
     frame_period_ms: f64,
