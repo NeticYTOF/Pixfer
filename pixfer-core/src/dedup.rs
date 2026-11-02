@@ -123,20 +123,16 @@ mod tests {
 
     #[test]
     fn dedup_stage_counts() {
-        let mut rx = DedupSet::new();
-        let mut stage = DedupStage::new(rx);
         let present = fp_bytes("present");
         let absent = fp_bytes("absent");
-        // Manually mark "present" as already held.
-        // (DedupStage takes ownership of rx, so register before moving.)
-        // Reconstruct: build stage with a pre-populated set.
-        let mut rx2 = DedupSet::new();
-        rx2.add(&present);
-        let mut stage2 = DedupStage::new(rx2);
-        assert_eq!(stage2.process(&present), DedupDecision::Skip);
-        assert_eq!(stage2.process(&absent), DedupDecision::Transfer);
-        assert_eq!(stage2.skipped_count(), 1);
-        assert_eq!(stage2.transferred_count(), 1);
+        // Build the stage with a pre-populated set holding "present".
+        let mut rx = DedupSet::new();
+        rx.add(&present);
+        let mut stage = DedupStage::new(rx);
+        assert_eq!(stage.process(&present), DedupDecision::Skip);
+        assert_eq!(stage.process(&absent), DedupDecision::Transfer);
+        assert_eq!(stage.skipped_count(), 1);
+        assert_eq!(stage.transferred_count(), 1);
     }
 
     #[test]

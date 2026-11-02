@@ -216,7 +216,7 @@ mod tests {
         assert_eq!(sched.len(), cfg.max_retries as usize);
         assert_eq!(s.policy_name(), "exponential");
         // Total wait is the sum of the schedule.
-        assert_eq!(s.total_wait_ms(), sched.iter().sum());
+        assert_eq!(s.total_wait_ms(), sched.iter().sum::<u64>());
     }
 
     #[test]

@@ -16,11 +16,13 @@ pub mod diagnostics;
 pub mod errors;
 pub mod features;
 pub mod fingerprint;
+pub mod frame_pool;
 pub mod framing;
 pub mod gf256;
 pub mod hal;
 pub mod integrity;
 pub mod link_budget;
+pub mod link_matrix;
 pub mod link_stats;
 pub mod logging;
 pub mod metrics;
@@ -38,6 +40,7 @@ pub mod resilience;
 pub mod rs;
 pub mod scheduler;
 pub mod session;
+pub mod session_log;
 pub mod state;
 pub mod stats;
 pub mod sync;
@@ -46,6 +49,7 @@ pub mod thermal;
 pub mod throughput_estimator;
 pub mod timing;
 pub mod transfer;
+pub mod transfer_plan;
 pub mod validation;
 pub mod worker;
 
@@ -71,10 +75,12 @@ pub use diagnostics::{Diagnostic, Diagnostics, LinkHealthProbe};
 pub use errors::{ErrorContext, PixferError, Severity};
 pub use features::{standard_features, Feature, FeatureRegistry};
 pub use fingerprint::{fnv1a64, FileFingerprint, FingerprintIndex};
+pub use frame_pool::ChunkFramePool;
 pub use framing::{FrameBuilder, FramePool, FrameValidator};
 pub use hal::{CameraFrame, CameraHal, DisplayHal};
 pub use integrity::{ChecksumReport, IntegrityChecker, IntegrityResult, BLOCK_GRID_LEN};
 pub use link_budget::{default_capacity, AllocationSummary, BudgetPlan, FlowRequest, LinkBudget};
+pub use link_matrix::{LinkMatrix, MetricCell};
 pub use link_stats::LinkStats;
 pub use logging::{
     DefaultLog, LogLevel, LogRecord, LogSink, Logger, MemorySink, SharedSink, WriterSink,
@@ -104,6 +110,7 @@ pub use scheduler::{
     FifoPolicy, PriorityPolicy, RoundRobinPolicy, SchedulerPolicy, TransferJob, TransferScheduler,
 };
 pub use session::{Role, SessionState, TransferSession};
+pub use session_log::{SessionEvent, SessionLog};
 pub use state::{FsmEvent, FsmState, TransferFsm};
 pub use stats::{SessionStatsMap, TransferStats};
 pub use sync::{SyncDetector, SyncPattern};
@@ -113,6 +120,7 @@ pub use thermal::{
 };
 pub use throughput_estimator::{pick_estimator, ThroughputEstimator};
 pub use timing::{Clock, Pacer, SystemClock};
+pub use transfer_plan::{build_plan, TransferPlan};
 pub use validation::{
     ConfigValidator, FrameValidator2, PayloadValidator, Validator, ValidatorRegistry,
 };
