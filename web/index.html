@@ -93,13 +93,13 @@
   function startTx() {
     const view = views.tx;
     if (view._pixfer) view._pixfer.stop();
-    view._pixfer = mountTx(view, window.FFlate);
+    view._pixfer = mountTx(view, window.FFlate, () => show("landing"));
     show("tx");
   }
   function startRx() {
     const view = views.rx;
     if (view._pixfer) view._pixfer.stop();
-    view._pixfer = mountRx(view, window.FFlate);
+    view._pixfer = mountRx(view, window.FFlate, () => show("landing"));
     show("rx");
   }
 
