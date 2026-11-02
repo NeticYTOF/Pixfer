@@ -2,6 +2,7 @@
 //! Reed-Solomon(255,223) FEC, CRC32 integrity, and auto-zip transfer planning.
 
 pub mod audit;
+pub mod benchmark;
 pub mod calibration;
 pub mod compress;
 pub mod config;
@@ -28,9 +29,11 @@ pub mod stats;
 pub mod telemetry;
 pub mod timing;
 pub mod transfer;
+pub mod validation;
 pub mod worker;
 
 pub use audit::{AuditEntry, AuditLog};
+pub use benchmark::{BenchResult, Benchmark};
 pub use calibration::{Calibration, CalibrationProfile, CalibrationRegistry};
 pub use compress::{is_zip, unzip_first, zip_bytes, CompressError};
 pub use config::{Config, ConfigBuilder, ConfigProfile};
@@ -67,4 +70,7 @@ pub use state::{FsmEvent, FsmState, TransferFsm};
 pub use stats::{SessionStatsMap, TransferStats};
 pub use telemetry::{TelemetryBus, TelemetryEvent, TelemetryRecorder};
 pub use timing::{Clock, Pacer, SystemClock};
+pub use validation::{
+    ConfigValidator, FrameValidator2, PayloadValidator, Validator, ValidatorRegistry,
+};
 pub use worker::{Direction, TransferWorker, WorkerEvent};
