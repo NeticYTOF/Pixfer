@@ -26,9 +26,9 @@ const FINDER_BL = [0, GRID_H - FINDER_SIZE];
 export const HEADER_START = FINDER_SIZE * FINDER_SIZE; // 49
 export const PARITY_START = HEADER_START + ((HEADER_BYTES * 8 + 2) / 3) | 0; // 111
 export const PAYLOAD_START = PARITY_START + ((RS_PARITY * 8 + 2) / 3) | 0; // 197
-const HEADER_BLOCKS = ((HEADER_BYTES * 8 + 2) / 3) | 0; // 62
-const PARITY_BLOCKS = ((RS_PARITY * 8 + 2) / 3) | 0; // 86
-const PAYLOAD_BLOCKS = ((RS_K * 8 + 2) / 3) | 0; // 595
+export const HEADER_BLOCKS = ((HEADER_BYTES * 8 + 2) / 3) | 0; // 62
+export const PARITY_BLOCKS = ((RS_PARITY * 8 + 2) / 3) | 0; // 86
+export const PAYLOAD_BLOCKS = ((RS_K * 8 + 2) / 3) | 0; // 595
 
 export const FINDER = [
   [7, 7, 7, 7, 7, 7, 7],
