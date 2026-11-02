@@ -1,13 +1,12 @@
-// RX: open the camera, sample and decode the peer's screen, reassemble
+// RX: open the camera, decode the peer's flashed QR codes, reassemble
 // chunks, auto-unzip zipped payloads, and download the file. This side
-// emits Pong/Ack/Nak frames on its own screen via a small canvas.
+// flashes actual QR codes (Pong/Ack/Nak) on its own screen for the peer's
+// camera.
 
 import * as core from "./core.js";
-import { openCamera, sampleBlocks, camOpts, makeEmitter, fitCanvas } from "./light.js";
-import { detectAlignment } from "./align.js";
-
-const ALIGN_EVERY_N_FRAMES = 15;
-const ALIGN_MIN_QUALITY = 0.5;
+import { openCamera, makeEmitter, fitCanvas } from "./light.js";
+import { qrEncode } from "./qr.js";
+import { qrDecodeVideo } from "./qrdecode.js";
 
 export function mountRx(root, fflate, onBack) {
   const video = root.querySelector("#rx-video");
@@ -33,39 +32,20 @@ export function mountRx(root, fflate, onBack) {
   let totalBytes = 0;
   let finished = false;
   let camHandle = null;
-  let frameCount = 0;
-  let aligned = null; // {pitchX, pitchY, offX, offY, quality}
 
   openCamera(video, (v) => {
     drawCam(v, camCanvas);
-    // Auto-calibration: detect the 3 finder squares to recover the true on-
-    // screen pitch/offset instead of trusting the slider guess. Throttle the
-    // detection (every 15 frames) and lock the first result that clears the
-    // quality bar.
-    frameCount++;
-    if (!aligned && (frameCount % ALIGN_EVERY_N_FRAMES === 0)) {
-      const al = detectAlignment(v);
-      if (al.found && al.quality >= ALIGN_MIN_QUALITY) aligned = al;
-    }
-    const opts = samplerOpts();
-    const blocks = sampleBlocks(v, opts);
-    let dec = core.decodeBlocks(blocks);
-    if (!dec.ok) {
-      // The sender's screen flashes frames (normal/inverted phases). A
-      // capture may land on the inverted phase; invert the sampled blocks
-      // and try decoding again.
-      const decInv = core.decodeBlocks(core.inverseBlocks(blocks));
-      if (decInv.ok) dec = decInv;
-    }
+    // Decode the peer's flashed QR codes (actual QR, black/white).
+    const dec = qrDecodeVideo(v);
     if (dec.ok) {
-      route(dec.frame, dec.ok);
+      route(dec.frame, true);
     } else if (session && totalChunks > 0) {
       // A captured frame failed to decode (loss/corruption past the RS
       // correction bound). NAK the lowest chunk we have not received yet,
       // so the sender retransmits it — that is how lost packets are recovered.
       session.onChunkErr(lowestMissing());
       const nf = session.nextFrame();
-      if (nf) emitter.setFrame(nf);
+      if (nf) emitter.setQr(qrEncode(nf));
     }
   })
     .then((h) => {
@@ -74,21 +54,6 @@ export function mountRx(root, fflate, onBack) {
     .catch((e) => {
       statusEl.textContent = "camera: " + e.message;
     });
-
-  // Slider opts, overridden by the detected alignment when it has locked.
-  function samplerOpts() {
-    const base = camOpts(root, "rx");
-    if (aligned) {
-      return {
-        ...base,
-        blockPx: aligned.pitchX,
-        blockPy: aligned.pitchY,
-        offX: aligned.offX,
-        offY: aligned.offY,
-      };
-    }
-    return base;
-  }
 
   // Lowest chunk index not yet received (for NAKing lost frames).
   function lowestMissing() {
@@ -127,7 +92,7 @@ export function mountRx(root, fflate, onBack) {
     if (f.kind === "Ping") {
       ensureSession(f.sessionId, f.totalChunks);
       const nf = session.nextFrame();
-      if (nf) emitter.setFrame(nf); // flash the Pong
+      if (nf) emitter.setQr(qrEncode(nf)); // flash the Pong as an actual QR
     } else if (f.kind === "Chunk") {
       ensureSession(f.sessionId, f.totalChunks);
       if (ok) {
@@ -138,7 +103,7 @@ export function mountRx(root, fflate, onBack) {
         session.onChunkErr(f.chunkIdx);
       }
       const nf = session.nextFrame();
-      if (nf) emitter.setFrame(nf); // flash the Ack/Nak
+      if (nf) emitter.setQr(qrEncode(nf)); // flash the Ack/Nak as an actual QR
       const got = chunks.filter(Boolean).length;
       if (totalChunks > 0) {
         progressFill.style.width = (got / totalChunks) * 100 + "%";

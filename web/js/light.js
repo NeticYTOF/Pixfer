@@ -110,7 +110,8 @@ export function makeEmitter(canvas) {
   const pal = core.PALETTE;
   let blocksRef = null; // static (idle) blocks
   let flash = null; // { normal, inverse } when flashing a session frame
-  let phase = false; // false = normal, true = inverted
+  let flashQr = null; // { data (0/1 modules), size } when flashing a QR code
+  let phase = false; // false = normal (black-on-white), true = inverted
   let lastToggle = 0;
   let lastW = 0;
   let lastH = 0;
@@ -120,8 +121,31 @@ export function makeEmitter(canvas) {
   function paint() {
     const w = canvas.width;
     const h = canvas.height;
+    if (w === 0 || h === 0) return;
+    if (flashQr) {
+      // QR render: fillRect per module, fast. Normal phase = black modules
+      // on white; inverted phase = white modules on black (the flash).
+      if (w === lastW && h === lastH && !dirty) return;
+      lastW = w;
+      lastH = h;
+      dirty = false;
+      const n = flashQr.size;
+      const mp = Math.max(1, (w / n) | 0);
+      const bg = phase ? 0 : 255;
+      const fg = phase ? 255 : 0;
+      ctx.fillStyle = `rgb(${bg},${bg},${bg})`;
+      ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = `rgb(${fg},${fg},${fg})`;
+      const data = flashQr.data;
+      for (let r = 0; r < n; r++) {
+        for (let c = 0; c < n; c++) {
+          if (data[r * n + c]) ctx.fillRect(c * mp, r * mp, mp, mp);
+        }
+      }
+      return;
+    }
     const active = flash ? (phase ? flash.inverse : flash.normal) : blocksRef;
-    if (!active || w === 0 || h === 0) return;
+    if (!active) return;
     if (w === lastW && h === lastH && !dirty) return;
     lastW = w;
     lastH = h;
@@ -155,7 +179,7 @@ export function makeEmitter(canvas) {
 
   function tick() {
     if (!running) return;
-    if (flash) {
+    if (flash || flashQr) {
       const now = performance.now();
       if (now - lastToggle >= FLASH_PHASE_MS) {
         lastToggle = now;
@@ -170,6 +194,7 @@ export function makeEmitter(canvas) {
   function setBlocks(blocks) {
     blocksRef = blocks;
     flash = null;
+    flashQr = null;
     dirty = true;
     if (!running) {
       running = true;
@@ -181,6 +206,21 @@ export function makeEmitter(canvas) {
   function setFrame(frame) {
     const normal = core.renderBlocks(frame);
     flash = { normal, inverse: core.inverseBlocks(normal) };
+    flashQr = null;
+    phase = false;
+    lastToggle = performance.now();
+    dirty = true;
+    if (!running) {
+      running = true;
+      requestAnimationFrame(tick);
+    }
+  }
+
+  // Flash an actual QR code: alternate black-on-white / white-on-black.
+  // `qr` = { data: Uint8Array of 0/1 modules, size: N }.
+  function setQr(qr) {
+    flashQr = qr;
+    flash = null;
     phase = false;
     lastToggle = performance.now();
     dirty = true;
@@ -193,9 +233,11 @@ export function makeEmitter(canvas) {
   return {
     setBlocks,
     setFrame,
+    setQr,
     stop() {
       running = false;
       flash = null;
+      flashQr = null;
     },
   };
 }

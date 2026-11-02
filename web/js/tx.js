@@ -1,15 +1,15 @@
 // TX: pick a file, auto-zip when the estimated transfer time exceeds the
 // 30s threshold, chunk into 223-byte payloads, and transmit with
-// stop-and-wait ARQ. This side renders frames on a canvas (light out) and
-// reads Pong/Ack/Nak frames from the peer's screen with its camera.
+// stop-and-wait ARQ. This side flashes ACTUAL QR codes (black/white,
+// standard QR format with Reed-Solomon FEC) and reads Pong/Ack/Nak QR
+// codes from the peer's screen with its camera.
 
 import * as core from "./core.js";
-import { openCamera, sampleBlocks, camOpts, makeEmitter, fitCanvas } from "./light.js";
-import { detectAlignment } from "./align.js";
+import { openCamera, makeEmitter, fitCanvas } from "./light.js";
+import { qrEncode } from "./qr.js";
+import { qrDecodeVideo } from "./qrdecode.js";
 
 const ACK_TIMEOUT_MS = 2500;
-const ALIGN_EVERY_N_FRAMES = 15;
-const ALIGN_MIN_QUALITY = 0.5;
 
 export function mountTx(root, fflate, onBack) {
   const canvas = root.querySelector("#tx-canvas");
@@ -34,22 +34,6 @@ export function mountTx(root, fflate, onBack) {
   let totalChunks = 0;
   let ackTimer = null;
   let camHandle = null;
-  let frameCount = 0;
-  let aligned = null;
-
-  function samplerOpts() {
-    const base = camOpts(root, "tx");
-    if (aligned) {
-      return {
-        ...base,
-        blockPx: aligned.pitchX,
-        blockPy: aligned.pitchY,
-        offX: aligned.offX,
-        offY: aligned.offY,
-      };
-    }
-    return base;
-  }
 
   function setStatus(t) {
     statusEl.textContent = t;
@@ -89,22 +73,8 @@ export function mountTx(root, fflate, onBack) {
     if (!camHandle) {
       try {
         camHandle = await openCamera(camVideo, (video) => {
-          // Same auto-calibration as the RX side: recover true on-screen
-          // pitch/offset from the peer screen's finder squares.
-          frameCount++;
-          if (!aligned && (frameCount % ALIGN_EVERY_N_FRAMES === 0)) {
-            const al = detectAlignment(video);
-            if (al.found && al.quality >= ALIGN_MIN_QUALITY) aligned = al;
-          }
-          const blocks = sampleBlocks(video, samplerOpts());
-          let dec = core.decodeBlocks(blocks);
-          if (!dec.ok) {
-            // The peer's screen flashes frames (normal/inverted phases). A
-            // capture may land on the inverted phase; invert the sampled
-            // blocks and try decoding again.
-            const decInv = core.decodeBlocks(core.inverseBlocks(blocks));
-            if (decInv.ok) dec = decInv;
-          }
+          // Read the peer's flashed QR codes (Pong/Ack/Nak).
+          const dec = qrDecodeVideo(video);
           if (dec.ok) route(dec.frame);
         });
         pump();
@@ -150,11 +120,11 @@ export function mountTx(root, fflate, onBack) {
     }
     if (f.kind === "Chunk") {
       f.payload = chunkPayload(f.chunkIdx);
-      emitter.setFrame(f); // flash the chunk (normal/inverted phases)
+      emitter.setQr(qrEncode(f)); // flash an actual QR code (black/white)
       clearTimeout(ackTimer);
       ackTimer = setTimeout(onAckTimeout, ACK_TIMEOUT_MS);
     } else {
-      emitter.setFrame(f); // flash Ping/End too
+      emitter.setQr(qrEncode(f)); // flash Ping/End as QR too
     }
   }
 
@@ -163,7 +133,7 @@ export function mountTx(root, fflate, onBack) {
     const r = session.onTimeout();
     if (r) {
       r.payload = chunkPayload(r.chunkIdx);
-      emitter.setFrame(r);
+      emitter.setQr(qrEncode(r));
       ackTimer = setTimeout(onAckTimeout, ACK_TIMEOUT_MS);
     } else {
       setStatus("no ack — transfer failed after retries");
