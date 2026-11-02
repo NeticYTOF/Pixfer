@@ -3,7 +3,7 @@
 //! engineered: a "clock discipline" layer for a link whose "wire" is one
 //! phone screen and one phone camera.)
 
-use crate::timing::{Clock, Pacer};
+use crate::timing::Pacer;
 
 /// A frame pacer that spaces frame emissions at a target fps.
 ///

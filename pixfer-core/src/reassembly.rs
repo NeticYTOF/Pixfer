@@ -83,6 +83,15 @@ impl Reassembler {
         self.total_chunks
     }
 
+    pub fn session_id(&self) -> u16 {
+        self.session_id
+    }
+
+    /// The received chunk indices, in ascending order.
+    pub fn received_indices(&self) -> Vec<u32> {
+        self.received.iter().copied().collect()
+    }
+
     /// JSON-ish status for the UI ("3/5 chunks, gaps: [1, 4]").
     pub fn status(&self) -> String {
         let gaps = self.gaps();

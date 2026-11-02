@@ -20,9 +20,11 @@ pub mod congestion;
 pub mod dedup;
 pub mod diagnostics;
 pub mod errors;
+pub mod exposure_controller;
 pub mod features;
 pub mod fingerprint;
 pub mod frame_builder_ext;
+pub mod frame_codec;
 pub mod frame_pacer;
 pub mod frame_pool;
 pub mod frame_validator_ext;
@@ -71,6 +73,7 @@ pub mod transfer;
 pub mod transfer_health;
 pub mod transfer_orchestrator;
 pub mod transfer_plan;
+pub mod transfer_rollback;
 pub mod transfer_session_ext;
 pub mod ui_state;
 pub mod validation;
@@ -102,9 +105,13 @@ pub use congestion::{
 pub use dedup::{decide, DedupDecision, DedupSet, DedupStage};
 pub use diagnostics::{Diagnostic, Diagnostics, LinkHealthProbe};
 pub use errors::{ErrorContext, PixferError, Severity};
+pub use exposure_controller::{
+    locked_exposure, ExposureController, ExposureReading, ExposureTarget,
+};
 pub use features::{standard_features, Feature, FeatureRegistry};
 pub use fingerprint::{fnv1a64, FileFingerprint, FingerprintIndex};
 pub use frame_builder_ext::FrameBuilder2;
+pub use frame_codec::{decode, decode_payload, encode, encode_payload, BLOCKS_PER_FRAME};
 pub use frame_pacer::FramePacer;
 pub use frame_pool::ChunkFramePool;
 pub use frame_validator_ext::{FrameValidation, FrameValidatorExt};
@@ -165,6 +172,7 @@ pub use timing::{Clock, Pacer, SystemClock};
 pub use transfer_health::{HealthSample, HealthTier, TransferHealth};
 pub use transfer_orchestrator::{TransferOrchestrator, TransferOutcome};
 pub use transfer_plan::{build_plan, TransferPlan};
+pub use transfer_rollback::{ReassemblySnapshot, TransferRollback};
 pub use transfer_session_ext::TransferSessionExt;
 pub use ui_state::{UiState, UiStateMachine};
 pub use validation::{

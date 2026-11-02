@@ -60,9 +60,6 @@ impl LinkScorer {
     /// Score from a full stats snapshot: uses delivery ratio as the
     /// FEC proxy and MB/s from the stats.
     pub fn score_from_stats(&self, stats: &crate::link_stats::LinkStats, floor_mbps: f64) -> f64 {
-        let ratio = stats.delivery_ratio(); // 0..=1
-                                            // Map delivery ratio to a 0-100 sub-score: 1.0 -> 100, 0.0 -> 0.
-        let fec = (ratio * 100.0).clamp(0.0, 100.0);
         let tp = stats.sent_mbps();
         let i = ScoreInputs {
             fec_corrected: 0,
