@@ -8,6 +8,7 @@ pub mod battery;
 pub mod benchmark;
 pub mod calibration;
 pub mod camera_config;
+pub mod camera_focus_controller;
 pub mod checksum;
 pub mod chunk_index;
 pub mod chunk_prioritizer;
@@ -16,6 +17,7 @@ pub mod color_adaptive;
 pub mod color_calibration;
 pub mod color_detector;
 pub mod color_drift_monitor;
+pub mod color_lut;
 pub mod color_palette;
 pub mod color_quantizer;
 pub mod color_temperature;
@@ -45,6 +47,7 @@ pub mod link_budget_ext;
 pub mod link_calibration_store;
 pub mod link_capacity;
 pub mod link_fingerprint;
+pub mod link_integrity_report;
 pub mod link_matrix;
 pub mod link_monitor;
 pub mod link_probe;
@@ -56,6 +59,7 @@ pub mod logging;
 pub mod metrics;
 pub mod modulation;
 pub mod observability;
+pub mod packet_reorder_buffer;
 pub mod pipeline;
 pub mod policy;
 pub mod power;
@@ -69,9 +73,11 @@ pub mod reliability;
 pub mod resilience;
 pub mod retransmit;
 pub mod rs;
+pub mod rs_tuner;
 pub mod rx_camera;
 pub mod rx_exposure_lock;
 pub mod scheduler;
+pub mod screen_brightness_governor;
 pub mod screen_renderer;
 pub mod session;
 pub mod session_log;
@@ -111,6 +117,7 @@ pub use battery::{BatteryGovernor, BatteryModel, BatteryState};
 pub use benchmark::{BenchResult, Benchmark};
 pub use calibration::{Calibration, CalibrationProfile, CalibrationRegistry};
 pub use camera_config::{pick_camera_config, CameraConfig};
+pub use camera_focus_controller::{CameraFocusController, FocusSample};
 pub use checksum::{
     pick_checksum, Adler32Checksum, Checksum, ChecksumRegistry, ChecksumResult, ChecksumSuite,
     Crc32Checksum, Fnv1aChecksum,
@@ -121,6 +128,7 @@ pub use chunk_reorder::ChunkReorder;
 pub use color_adaptive::{recalibrate, AdaptivePalette, MeasuredColor};
 pub use color_calibration::ColorCalibration;
 pub use color_drift_monitor::{ColorDriftMonitor, DriftSample};
+pub use color_lut::ColorLut;
 pub use color_palette::{color_for_value, value_for_color, Color};
 pub use color_quantizer::{quantize, quantize_with_tolerance};
 pub use color_temperature::{TemperatureCorrector, TemperatureReading};
@@ -152,6 +160,7 @@ pub use link_budget::{default_capacity, AllocationSummary, BudgetPlan, FlowReque
 pub use link_budget_ext::{ExtendedSummary, LinkBudgetExt};
 pub use link_calibration_store::{CalibrationStore, CalibrationValues};
 pub use link_fingerprint::{compute_link_fingerprint, same_link, LinkFingerprint};
+pub use link_integrity_report::{IntegritySample, LinkIntegrityReport};
 pub use link_matrix::{LinkMatrix, MetricCell};
 pub use link_monitor::LinkMonitor;
 pub use link_probe::{LinkProbe, ProbeResult};
@@ -167,6 +176,7 @@ pub use modulation::{
     pick_strategy, CskStrategy, Modulation, ModulationStrategy, OokStrategy, VppmStrategy,
 };
 pub use observability::Observability;
+pub use packet_reorder_buffer::{BufferedPacket, PacketReorderBuffer};
 pub use pipeline::{
     ChunkStage, CompressStage, EncodeStage, Pipeline, PipelineContext, PipelineError,
     PipelineStage, ValidateStage,
@@ -186,11 +196,13 @@ pub use reliability::{ReliabilitySnapshot, ReliabilityTracker};
 pub use resilience::{BreakerState, CircuitBreaker, DegradationMode, HealthScore};
 pub use retransmit::{RetransmitEntry, RetransmitScheduler};
 pub use rs::{RSError, ReedSolomon, RS_K, RS_N, RS_T};
+pub use rs_tuner::RSTuner;
 pub use rx_camera::RxCamera;
 pub use rx_exposure_lock::{suggest_exposure, RxCameraExposureLock};
 pub use scheduler::{
     FifoPolicy, PriorityPolicy, RoundRobinPolicy, SchedulerPolicy, TransferJob, TransferScheduler,
 };
+pub use screen_brightness_governor::{BrightnessReading, ScreenBrightnessGovernor};
 pub use screen_renderer::{ScreenBuffer, ScreenRenderer};
 pub use session::{Role, SessionState, TransferSession};
 pub use session_log::{SessionEvent, SessionLog};
