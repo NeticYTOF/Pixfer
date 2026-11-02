@@ -49,6 +49,7 @@ pub mod link_capacity;
 pub mod link_fingerprint;
 pub mod link_integrity_report;
 pub mod link_matrix;
+pub mod link_matrix_ext;
 pub mod link_monitor;
 pub mod link_probe;
 pub mod link_quality;
@@ -61,6 +62,7 @@ pub mod modulation;
 pub mod observability;
 pub mod packet_reorder_buffer;
 pub mod pipeline;
+pub mod pipeline_ext;
 pub mod policy;
 pub mod power;
 pub mod progress;
@@ -92,6 +94,7 @@ pub mod throughput_estimator;
 pub mod throughput_meter;
 pub mod timing;
 pub mod transfer;
+pub mod transfer_checkpoint;
 pub mod transfer_checksum;
 pub mod transfer_health;
 pub mod transfer_heartbeat;
@@ -162,6 +165,7 @@ pub use link_calibration_store::{CalibrationStore, CalibrationValues};
 pub use link_fingerprint::{compute_link_fingerprint, same_link, LinkFingerprint};
 pub use link_integrity_report::{IntegritySample, LinkIntegrityReport};
 pub use link_matrix::{LinkMatrix, MetricCell};
+pub use link_matrix_ext::{LinkMatrixExt, MetricCellExt};
 pub use link_monitor::LinkMonitor;
 pub use link_probe::{LinkProbe, ProbeResult};
 pub use link_quality::{quality_score, LinkQuality, QualityMonitor};
@@ -180,6 +184,10 @@ pub use packet_reorder_buffer::{BufferedPacket, PacketReorderBuffer};
 pub use pipeline::{
     ChunkStage, CompressStage, EncodeStage, Pipeline, PipelineContext, PipelineError,
     PipelineStage, ValidateStage,
+};
+pub use pipeline_ext::{
+    CompressStageExt, DedupStageExt, EncodeStageExt, PipelineErrorExt, PipelineExt,
+    PipelineStageExt, SendStageExt, ValidateStageExt,
 };
 pub use policy::{
     pick_policy, ExponentialBackoffPolicy, FixedDelayPolicy, LinearBackoffPolicy, RetryBudget,
@@ -218,6 +226,7 @@ pub use thermal::{
 pub use throughput_estimator::{pick_estimator, ThroughputEstimator};
 pub use throughput_meter::ThroughputMeter2;
 pub use timing::{Clock, Pacer, SystemClock};
+pub use transfer_checkpoint::{new_checkpoint, CheckpointStore, TransferCheckpoint};
 pub use transfer_checksum::{
     fnv1a64_checksum, transfer_checksum, verify_transfer, TransferChecksumResult,
 };
