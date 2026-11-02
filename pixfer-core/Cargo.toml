@@ -1,0 +1,15 @@
+[package]
+name = "pixfer-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+flate2 = "1"
+crc32fast = "1"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "bench"
+harness = false
