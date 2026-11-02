@@ -57,8 +57,10 @@ export function camOpts(root, prefix) {
 // Sample one video frame into the 270x480 grid of 3-bit block values.
 // The 8-color palette is the full 3-bit cube, so nearest-palette-color is
 // exactly per-channel thresholding at the midpoint after gain scaling.
+// `blockPy` allows a separate vertical pitch: camera FOV distorts the
+// grid, so X and Y block spacing are generally different on screen.
 export function sampleBlocks(video, opts = {}) {
-  const { blockPx = 4, offX = 0, offY = 0, gain = 1 } = opts;
+  const { blockPx = 4, blockPy = 4, offX = 0, offY = 0, gain = 1 } = opts;
   const vw = video.videoWidth || 640;
   const vh = video.videoHeight || 480;
 
@@ -77,7 +79,7 @@ export function sampleBlocks(video, opts = {}) {
   for (let r = 0; r < core.GRID_H; r++) {
     for (let c = 0; c < core.GRID_W; c++) {
       const x = Math.max(0, Math.min(vw - 1, (offX + c * blockPx + Math.floor(blockPx / 2)) | 0));
-      const y = Math.max(0, Math.min(vh - 1, (offY + r * blockPx + Math.floor(blockPx / 2)) | 0));
+      const y = Math.max(0, Math.min(vh - 1, (offY + r * blockPy + Math.floor(blockPy / 2)) | 0));
       const idx = (y * vw + x) * 4;
       const rv = Math.min(255, d[idx] * gain) | 0;
       const gv = Math.min(255, d[idx + 1] * gain) | 0;
@@ -89,46 +91,42 @@ export function sampleBlocks(video, opts = {}) {
   return blocks;
 }
 
-// Emit a block grid through a screen: pre-render one 1080x1920 ImageData per
-// frame, then blit-scaled on every animation frame (no per-pixel re-render
-// in the hot loop).
+// Emit a block grid through a screen. The 270x480 grid is stretched to fill
+// the whole canvas (rectangular blocks), so the display uses the full box
+// instead of a letterboxed square. Repaint happens only when the blocks or
+// the canvas size change — no per-frame pixel work in the hot loop.
 export function makeEmitter(canvas) {
-  const off = document.createElement("canvas");
-  off.width = core.GRID_W * core.BLOCK_PX; // 1080
-  off.height = core.GRID_H * core.BLOCK_PX; // 1920
-  const octx = off.getContext("2d");
   const ctx = canvas.getContext("2d");
   const pal = core.PALETTE;
-  let img = null;
+  let blocksRef = null;
+  let lastW = 0;
+  let lastH = 0;
+  let dirty = false;
   let running = false;
 
-  function blit() {
-    if (!running || !img) return;
-    octx.putImageData(img, 0, 0);
-    const vw = canvas.width;
-    const vh = canvas.height;
-    if (vw > 0 && vh > 0) {
-      ctx.imageSmoothingEnabled = false;
-      ctx.clearRect(0, 0, vw, vh);
-      const scale = Math.min(vw / off.width, vh / off.height);
-      const dw = off.width * scale;
-      const dh = off.height * scale;
-      ctx.drawImage(off, (vw - dw) / 2, (vh - dh) / 2, dw, dh);
-    }
-    requestAnimationFrame(blit);
-  }
-
-  function setBlocks(blocks) {
-    if (!img) img = octx.createImageData(off.width, off.height);
+  function paint() {
+    const w = canvas.width;
+    const h = canvas.height;
+    if (!blocksRef || w === 0 || h === 0) return;
+    if (w === lastW && h === lastH && !dirty) return;
+    lastW = w;
+    lastH = h;
+    dirty = false;
+    const img = ctx.createImageData(w, h);
     const d = img.data;
+    const bw = w / core.GRID_W;
+    const bh = h / core.GRID_H;
     for (let r = 0; r < core.GRID_H; r++) {
       for (let c = 0; c < core.GRID_W; c++) {
-        const col = pal[blocks[r * core.GRID_W + c]];
-        const x0 = c * core.BLOCK_PX;
-        const y0 = r * core.BLOCK_PX;
-        for (let dy = 0; dy < core.BLOCK_PX; dy++) {
-          let idx = ((y0 + dy) * off.width + x0) * 4;
-          for (let dx = 0; dx < core.BLOCK_PX; dx++) {
+        const col = pal[blocksRef[r * core.GRID_W + c]];
+        const x0 = Math.floor(c * bw);
+        const x1 = Math.floor((c + 1) * bw);
+        const y0 = Math.floor(r * bh);
+        const y1 = Math.floor((r + 1) * bh);
+        for (let y = y0; y < y1; y++) {
+          let idx = (y * w + x0) * 4;
+          const n = x1 - x0;
+          for (let x = 0; x < n; x++) {
             d[idx] = col[0];
             d[idx + 1] = col[1];
             d[idx + 2] = col[2];
@@ -138,9 +136,21 @@ export function makeEmitter(canvas) {
         }
       }
     }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  function tick() {
+    if (!running) return;
+    paint();
+    requestAnimationFrame(tick);
+  }
+
+  function setBlocks(blocks) {
+    blocksRef = blocks;
+    dirty = true;
     if (!running) {
       running = true;
-      requestAnimationFrame(blit);
+      requestAnimationFrame(tick);
     }
   }
 
@@ -152,12 +162,11 @@ export function makeEmitter(canvas) {
   };
 }
 
-// Keep a canvas pixel size matched to its container.
+// Keep a canvas pixel size matched to its own rendered (CSS) box, so the
+// grid uses the full display area without letterboxing.
 export function fitCanvas(canvas) {
-  const parent = canvas.parentElement;
-  if (!parent) return;
-  const w = parent.clientWidth;
-  const h = parent.clientHeight;
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
   if (canvas.width !== w || canvas.height !== h) {
     canvas.width = w;
     canvas.height = h;

@@ -4,6 +4,10 @@
 
 import * as core from "./core.js";
 import { openCamera, sampleBlocks, camOpts, makeEmitter, fitCanvas } from "./light.js";
+import { detectAlignment } from "./align.js";
+
+const ALIGN_EVERY_N_FRAMES = 15;
+const ALIGN_MIN_QUALITY = 0.5;
 
 export function mountRx(root, fflate, onBack) {
   const video = root.querySelector("#rx-video");
@@ -29,11 +33,32 @@ export function mountRx(root, fflate, onBack) {
   let totalBytes = 0;
   let finished = false;
   let camHandle = null;
+  let frameCount = 0;
+  let aligned = null; // {pitchX, pitchY, offX, offY, quality}
 
   openCamera(video, (v) => {
     drawCam(v, camCanvas);
-    const dec = core.decodeBlocks(sampleBlocks(v, camOpts(root, "rx")));
-    if (dec.ok) route(dec.frame, dec.ok);
+    // Auto-calibration: detect the 3 finder squares to recover the true on-
+    // screen pitch/offset instead of trusting the slider guess. Throttle the
+    // detection (every 15 frames) and lock the first result that clears the
+    // quality bar.
+    frameCount++;
+    if (!aligned && (frameCount % ALIGN_EVERY_N_FRAMES === 0)) {
+      const al = detectAlignment(v);
+      if (al.found && al.quality >= ALIGN_MIN_QUALITY) aligned = al;
+    }
+    const opts = samplerOpts();
+    const dec = core.decodeBlocks(sampleBlocks(v, opts));
+    if (dec.ok) {
+      route(dec.frame, dec.ok);
+    } else if (session && totalChunks > 0) {
+      // A captured frame failed to decode (loss/corruption past the RS
+      // correction bound). NAK the lowest chunk we have not received yet,
+      // so the sender retransmits it — that is how lost packets are recovered.
+      session.onChunkErr(lowestMissing());
+      const nf = session.nextFrame();
+      if (nf) emitter.setBlocks(core.renderBlocks(nf));
+    }
   })
     .then((h) => {
       camHandle = h;
@@ -41,6 +66,29 @@ export function mountRx(root, fflate, onBack) {
     .catch((e) => {
       statusEl.textContent = "camera: " + e.message;
     });
+
+  // Slider opts, overridden by the detected alignment when it has locked.
+  function samplerOpts() {
+    const base = camOpts(root, "rx");
+    if (aligned) {
+      return {
+        ...base,
+        blockPx: aligned.pitchX,
+        blockPy: aligned.pitchY,
+        offX: aligned.offX,
+        offY: aligned.offY,
+      };
+    }
+    return base;
+  }
+
+  // Lowest chunk index not yet received (for NAKing lost frames).
+  function lowestMissing() {
+    for (let i = 0; i < totalChunks; i++) {
+      if (!chunks[i]) return i;
+    }
+    return 0;
+  }
 
   function drawCam(v, canvas) {
     const ctx = canvas.getContext("2d");

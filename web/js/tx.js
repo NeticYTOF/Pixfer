@@ -5,8 +5,11 @@
 
 import * as core from "./core.js";
 import { openCamera, sampleBlocks, camOpts, makeEmitter, fitCanvas } from "./light.js";
+import { detectAlignment } from "./align.js";
 
 const ACK_TIMEOUT_MS = 2500;
+const ALIGN_EVERY_N_FRAMES = 15;
+const ALIGN_MIN_QUALITY = 0.5;
 
 export function mountTx(root, fflate, onBack) {
   const canvas = root.querySelector("#tx-canvas");
@@ -31,6 +34,22 @@ export function mountTx(root, fflate, onBack) {
   let totalChunks = 0;
   let ackTimer = null;
   let camHandle = null;
+  let frameCount = 0;
+  let aligned = null;
+
+  function samplerOpts() {
+    const base = camOpts(root, "tx");
+    if (aligned) {
+      return {
+        ...base,
+        blockPx: aligned.pitchX,
+        blockPy: aligned.pitchY,
+        offX: aligned.offX,
+        offY: aligned.offY,
+      };
+    }
+    return base;
+  }
 
   function setStatus(t) {
     statusEl.textContent = t;
@@ -70,7 +89,14 @@ export function mountTx(root, fflate, onBack) {
     if (!camHandle) {
       try {
         camHandle = await openCamera(camVideo, (video) => {
-          const dec = core.decodeBlocks(sampleBlocks(video, camOpts(root, "tx")));
+          // Same auto-calibration as the RX side: recover true on-screen
+          // pitch/offset from the peer screen's finder squares.
+          frameCount++;
+          if (!aligned && (frameCount % ALIGN_EVERY_N_FRAMES === 0)) {
+            const al = detectAlignment(video);
+            if (al.found && al.quality >= ALIGN_MIN_QUALITY) aligned = al;
+          }
+          const dec = core.decodeBlocks(sampleBlocks(video, samplerOpts()));
           if (dec.ok) route(dec.frame);
         });
         pump();

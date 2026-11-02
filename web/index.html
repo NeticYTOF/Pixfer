@@ -13,16 +13,31 @@
   <!-- landing -->
   <section id="landing" class="view">
     <div class="landing-inner">
-      <h1 class="brand">Pixfer</h1>
-      <p class="tagline">
-        share files over light — no wifi, no bluetooth, no gps.<br />
-        just a screen and a camera.
-      </p>
-      <div class="mode-buttons">
-        <button id="btn-tx" class="mode-btn accent">send a file</button>
-        <button id="btn-rx" class="mode-btn">receive a file</button>
+      <div class="landing-text">
+        <h1 class="brand">Pixfer</h1>
+        <p class="tagline">
+          share files over light — no wifi, no bluetooth, no gps.<br />
+          just a screen and a camera.
+        </p>
+        <div class="mode-buttons">
+          <button id="btn-tx" class="mode-btn accent">send a file</button>
+          <button id="btn-rx" class="mode-btn">receive a file</button>
+        </div>
+        <p class="hint">open this page on two devices — one sends, one receives.</p>
       </div>
-      <p class="hint">open this page on two devices — one sends, one receives.</p>
+      <div class="landing-side">
+        <div class="swatch-strip">
+          <span style="background:#000" title="black"></span>
+          <span style="background:#f00" title="red"></span>
+          <span style="background:#0f0" title="green"></span>
+          <span style="background:#ff0" title="yellow"></span>
+          <span style="background:#00f" title="blue"></span>
+          <span style="background:#f0f" title="magenta"></span>
+          <span style="background:#0ff" title="cyan"></span>
+          <span style="background:#fff" title="white"></span>
+        </div>
+        <p class="side-note">270x480 block grid, 8 colors per 4px block, RS(255,223) error correction, ack/nak retransmit.</p>
+      </div>
     </div>
   </section>
 
@@ -36,7 +51,7 @@
       </label>
       <span id="tx-meta" class="bar-meta"></span>
       <div class="cal">
-        <label>block px<input type="range" id="tx-blockpx" min="2" max="16" step="1" value="4" /></label>
+        <label>block px<input type="range" id="tx-blockpx" min="2" max="16" step="1" value="8" /></label>
         <label>off x<input type="range" id="tx-offx" min="-60" max="60" step="1" value="0" /></label>
         <label>off y<input type="range" id="tx-offy" min="-60" max="60" step="1" value="0" /></label>
         <label>gain<input type="range" id="tx-gain" min="0.5" max="3" step="0.1" value="1" /></label>
@@ -56,7 +71,7 @@
     <header class="bar">
       <span class="bar-title">receive</span>
       <div class="cal">
-        <label>block px<input type="range" id="rx-blockpx" min="2" max="16" step="1" value="4" /></label>
+        <label>block px<input type="range" id="rx-blockpx" min="2" max="16" step="1" value="8" /></label>
         <label>off x<input type="range" id="rx-offx" min="-60" max="60" step="1" value="0" /></label>
         <label>off y<input type="range" id="rx-offy" min="-60" max="60" step="1" value="0" /></label>
         <label>gain<input type="range" id="rx-gain" min="0.5" max="3" step="0.1" value="1" /></label>
