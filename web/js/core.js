@@ -302,7 +302,7 @@ function writeBlocks(blocks, start, data) {
   }
 }
 
-function readBlocks(blocks, out) {
+export function readBlocks(blocks, out) {
   const bitsNeeded = out.length * 8;
   const blocksNeeded = ((bitsNeeded + 2) / 3) | 0;
   if (blocks.length < blocksNeeded) {
@@ -339,13 +339,13 @@ function setU32le(buf, off, v) {
   buf[off + 3] = (v >>> 24) & 0xff;
 }
 
-function u32le(buf, off) {
-  return (
+export function u32le(buf, off) {
+  const v =
     buf[off] |
     (buf[off + 1] << 8) |
     (buf[off + 2] << 16) |
-    ((buf[off + 3] & 0x7f) << 24)
-  );
+    (buf[off + 3] << 24);
+  return v >>> 0;
 }
 
 // ---------- CRC32 (zlib/ETH, reflected poly 0xEDB88320) ----------

@@ -1,0 +1,8 @@
+{
+  "name": "pixfer-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/roundtrip.test.mjs"
+  }
+}
