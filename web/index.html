@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<meta name="theme-color" content="#0b0e14" />
+<title>Pixfer</title>
+<link rel="stylesheet" href="css/style.css" />
+<script src="https://unpkg.com/fflate@0.8.1/dist/index.umd.js"></script>
+</head>
+<body>
+<main id="app">
+  <!-- landing -->
+  <section id="landing" class="view">
+    <div class="landing-inner">
+      <h1 class="brand">Pixfer</h1>
+      <p class="tagline">
+        share files over light — no wifi, no bluetooth, no gps.<br />
+        just a screen and a camera.
+      </p>
+      <div class="mode-buttons">
+        <button id="btn-tx" class="mode-btn accent">send a file</button>
+        <button id="btn-rx" class="mode-btn">receive a file</button>
+      </div>
+      <p class="hint">open this page on two devices — one sends, one receives.</p>
+    </div>
+  </section>
+
+  <!-- tx (sender) -->
+  <section id="tx-view" class="view" hidden>
+    <header class="bar">
+      <span class="bar-title">send</span>
+      <label class="filepick">
+        <input type="file" id="tx-file" />
+        <span id="tx-filename">choose a file</span>
+      </label>
+      <span id="tx-meta" class="bar-meta"></span>
+      <div class="cal">
+        <label>block px<input type="range" id="tx-blockpx" min="2" max="16" step="1" value="4" /></label>
+        <label>off x<input type="range" id="tx-offx" min="-60" max="60" step="1" value="0" /></label>
+        <label>off y<input type="range" id="tx-offy" min="-60" max="60" step="1" value="0" /></label>
+        <label>gain<input type="range" id="tx-gain" min="0.5" max="3" step="0.1" value="1" /></label>
+      </div>
+      <button id="tx-back" class="ghost">back</button>
+    </header>
+    <div class="stage">
+      <canvas id="tx-canvas" class="light-canvas"></canvas>
+      <video id="tx-camera" class="cam-preview" muted playsinline></video>
+      <div id="tx-status" class="status">pick a file to begin</div>
+      <div class="progress"><div id="tx-progress" class="progress-fill"></div></div>
+    </div>
+  </section>
+
+  <!-- rx (receiver) -->
+  <section id="rx-view" class="view" hidden>
+    <header class="bar">
+      <span class="bar-title">receive</span>
+      <div class="cal">
+        <label>block px<input type="range" id="rx-blockpx" min="2" max="16" step="1" value="4" /></label>
+        <label>off x<input type="range" id="rx-offx" min="-60" max="60" step="1" value="0" /></label>
+        <label>off y<input type="range" id="rx-offy" min="-60" max="60" step="1" value="0" /></label>
+        <label>gain<input type="range" id="rx-gain" min="0.5" max="3" step="0.1" value="1" /></label>
+      </div>
+      <button id="rx-lock" class="ghost">lock exposure</button>
+      <button id="rx-back" class="ghost">back</button>
+    </header>
+    <div class="stage">
+      <video id="rx-video" class="cam-src" muted playsinline></video>
+      <canvas id="rx-canvas" class="cam-preview"></canvas>
+      <canvas id="rx-emit" class="light-canvas"></canvas>
+      <div id="rx-status" class="status">point your camera at the sending screen</div>
+      <div class="progress"><div id="rx-progress" class="progress-fill"></div></div>
+    </div>
+  </section>
+</main>
+<script type="module">
+  import * as core from "./js/core.js";
+  import { mountTx } from "./js/tx.js";
+  import { mountRx } from "./js/rx.js";
+
+  const params = new URLSearchParams(location.search);
+  const mode = params.get("mode");
+
+  const views = {
+    landing: document.getElementById("landing"),
+    tx: document.getElementById("tx-view"),
+    rx: document.getElementById("rx-view"),
+  };
+  function show(name) {
+    for (const [k, el] of Object.entries(views)) el.hidden = k !== name;
+  }
+
+  function startTx() {
+    const view = views.tx;
+    if (view._pixfer) view._pixfer.stop();
+    view._pixfer = mountTx(view, window.FFlate);
+    show("tx");
+  }
+  function startRx() {
+    const view = views.rx;
+    if (view._pixfer) view._pixfer.stop();
+    view._pixfer = mountRx(view, window.FFlate);
+    show("rx");
+  }
+
+  document.getElementById("btn-tx").addEventListener("click", startTx);
+  document.getElementById("btn-rx").addEventListener("click", startRx);
+
+  if (mode === "tx") startTx();
+  else if (mode === "rx") startRx();
+  else show("landing");
+</script>
+</body>
+</html>
