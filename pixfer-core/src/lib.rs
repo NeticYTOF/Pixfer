@@ -10,6 +10,7 @@ pub mod calibration;
 pub mod camera_config;
 pub mod checksum;
 pub mod chunk_index;
+pub mod chunk_prioritizer;
 pub mod color_calibration;
 pub mod color_palette;
 pub mod color_quantizer;
@@ -60,12 +61,14 @@ pub mod session_registry;
 pub mod state;
 pub mod stats;
 pub mod sync;
+pub mod sync_recovery;
 pub mod telemetry;
 pub mod thermal;
 pub mod throughput_estimator;
 pub mod throughput_meter;
 pub mod timing;
 pub mod transfer;
+pub mod transfer_health;
 pub mod transfer_orchestrator;
 pub mod transfer_plan;
 pub mod transfer_session_ext;
@@ -87,6 +90,7 @@ pub use checksum::{
     Crc32Checksum, Fnv1aChecksum,
 };
 pub use chunk_index::ChunkIndex;
+pub use chunk_prioritizer::{ChunkPrioritizer, PendingChunk};
 pub use color_calibration::ColorCalibration;
 pub use color_palette::{color_for_value, value_for_color, Color};
 pub use color_quantizer::{quantize, quantize_with_tolerance};
@@ -150,6 +154,7 @@ pub use session_registry::{SessionEntry, SessionRegistry};
 pub use state::{FsmEvent, FsmState, TransferFsm};
 pub use stats::{SessionStatsMap, TransferStats};
 pub use sync::{SyncDetector, SyncPattern};
+pub use sync_recovery::{RecoveryState, SyncRecovery};
 pub use telemetry::{TelemetryBus, TelemetryEvent, TelemetryRecorder};
 pub use thermal::{
     classify, pick_thermal_budget, thermal_throttle, ThermalBudget, ThermalGovernor, ThermalState,
@@ -157,6 +162,7 @@ pub use thermal::{
 pub use throughput_estimator::{pick_estimator, ThroughputEstimator};
 pub use throughput_meter::ThroughputMeter2;
 pub use timing::{Clock, Pacer, SystemClock};
+pub use transfer_health::{HealthSample, HealthTier, TransferHealth};
 pub use transfer_orchestrator::{TransferOrchestrator, TransferOutcome};
 pub use transfer_plan::{build_plan, TransferPlan};
 pub use transfer_session_ext::TransferSessionExt;
