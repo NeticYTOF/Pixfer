@@ -28,6 +28,7 @@ pub mod features;
 pub mod fingerprint;
 pub mod frame_builder_ext;
 pub mod frame_codec;
+pub mod frame_encoder;
 pub mod frame_pacer;
 pub mod frame_pool;
 pub mod frame_validator_ext;
@@ -61,6 +62,7 @@ pub mod reliability;
 pub mod resilience;
 pub mod retransmit;
 pub mod rs;
+pub mod rx_camera;
 pub mod scheduler;
 pub mod screen_renderer;
 pub mod session;
@@ -84,6 +86,7 @@ pub mod transfer_resume;
 pub mod transfer_rollback;
 pub mod transfer_session_ext;
 pub mod transfer_watchdog;
+pub mod tx_screen;
 pub mod ui_state;
 pub mod validation;
 pub mod worker;
@@ -124,6 +127,7 @@ pub use features::{standard_features, Feature, FeatureRegistry};
 pub use fingerprint::{fnv1a64, FileFingerprint, FingerprintIndex};
 pub use frame_builder_ext::FrameBuilder2;
 pub use frame_codec::{decode, decode_payload, encode, encode_payload, BLOCKS_PER_FRAME};
+pub use frame_encoder::FrameEncoder;
 pub use frame_pacer::FramePacer;
 pub use frame_pool::ChunkFramePool;
 pub use frame_validator_ext::{FrameValidation, FrameValidatorExt};
@@ -166,6 +170,7 @@ pub use reliability::{ReliabilitySnapshot, ReliabilityTracker};
 pub use resilience::{BreakerState, CircuitBreaker, DegradationMode, HealthScore};
 pub use retransmit::{RetransmitEntry, RetransmitScheduler};
 pub use rs::{RSError, ReedSolomon, RS_K, RS_N, RS_T};
+pub use rx_camera::RxCamera;
 pub use scheduler::{
     FifoPolicy, PriorityPolicy, RoundRobinPolicy, SchedulerPolicy, TransferJob, TransferScheduler,
 };
@@ -194,6 +199,7 @@ pub use transfer_resume::{ResumePoint, TransferResume};
 pub use transfer_rollback::{ReassemblySnapshot, TransferRollback};
 pub use transfer_session_ext::TransferSessionExt;
 pub use transfer_watchdog::{TransferWatchdog, WatchdogState};
+pub use tx_screen::TxScreen;
 pub use ui_state::{UiState, UiStateMachine};
 pub use validation::{
     ConfigValidator, FrameValidator2, PayloadValidator, Validator, ValidatorRegistry,
