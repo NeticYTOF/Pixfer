@@ -7,6 +7,7 @@ pub mod battery;
 pub mod benchmark;
 pub mod calibration;
 pub mod checksum;
+pub mod color_palette;
 pub mod compress;
 pub mod config;
 pub mod congestion;
@@ -20,6 +21,7 @@ pub mod gf256;
 pub mod hal;
 pub mod integrity;
 pub mod link_budget;
+pub mod link_stats;
 pub mod logging;
 pub mod metrics;
 pub mod modulation;
@@ -31,6 +33,7 @@ pub mod progress;
 pub mod protocol;
 pub mod queue;
 pub mod reassembly;
+pub mod reliability;
 pub mod resilience;
 pub mod rs;
 pub mod scheduler;
@@ -40,6 +43,7 @@ pub mod stats;
 pub mod sync;
 pub mod telemetry;
 pub mod thermal;
+pub mod throughput_estimator;
 pub mod timing;
 pub mod transfer;
 pub mod validation;
@@ -56,6 +60,7 @@ pub use checksum::{
     pick_checksum, Adler32Checksum, Checksum, ChecksumRegistry, ChecksumResult, ChecksumSuite,
     Crc32Checksum, Fnv1aChecksum,
 };
+pub use color_palette::{color_for_value, value_for_color, Color};
 pub use compress::{is_zip, unzip_first, zip_bytes, CompressError};
 pub use config::{Config, ConfigBuilder, ConfigProfile};
 pub use congestion::{
@@ -70,6 +75,7 @@ pub use framing::{FrameBuilder, FramePool, FrameValidator};
 pub use hal::{CameraFrame, CameraHal, DisplayHal};
 pub use integrity::{ChecksumReport, IntegrityChecker, IntegrityResult, BLOCK_GRID_LEN};
 pub use link_budget::{default_capacity, AllocationSummary, BudgetPlan, FlowRequest, LinkBudget};
+pub use link_stats::LinkStats;
 pub use logging::{
     DefaultLog, LogLevel, LogRecord, LogSink, Logger, MemorySink, SharedSink, WriterSink,
 };
@@ -91,6 +97,7 @@ pub use progress::{ProgressSnapshot, ProgressTracker};
 pub use protocol::{Frame, FrameKind, Protocol, ProtocolError};
 pub use queue::WorkQueue;
 pub use reassembly::Reassembler;
+pub use reliability::{ReliabilitySnapshot, ReliabilityTracker};
 pub use resilience::{BreakerState, CircuitBreaker, DegradationMode, HealthScore};
 pub use rs::{RSError, ReedSolomon, RS_K, RS_N, RS_T};
 pub use scheduler::{
@@ -104,6 +111,7 @@ pub use telemetry::{TelemetryBus, TelemetryEvent, TelemetryRecorder};
 pub use thermal::{
     classify, pick_thermal_budget, thermal_throttle, ThermalBudget, ThermalGovernor, ThermalState,
 };
+pub use throughput_estimator::{pick_estimator, ThroughputEstimator};
 pub use timing::{Clock, Pacer, SystemClock};
 pub use validation::{
     ConfigValidator, FrameValidator2, PayloadValidator, Validator, ValidatorRegistry,
