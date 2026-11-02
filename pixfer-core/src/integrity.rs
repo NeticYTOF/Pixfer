@@ -1,0 +1,125 @@
+//! Stateful CRC32 integrity accounting for byte streams and optical block grids.
+//! Hilariously over-engineered because even photons deserve an auditor.
+
+use std::time::SystemTime;
+
+use crate::protocol::{GRID_H, GRID_W};
+
+/// Number of color blocks in one complete Pixfer optical frame.
+pub const BLOCK_GRID_LEN: usize = GRID_W * GRID_H;
+
+/// A point-in-time description of an integrity calculation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChecksumReport {
+    /// CRC32 value computed over all bytes accepted by the checker.
+    pub crc: u32,
+    /// Saturating number of bytes accepted by the checker.
+    pub length: u64,
+    /// Whether `crc` matched the expected value supplied by the caller.
+    pub matches: bool,
+    /// Wall-clock instant at which this report was created.
+    pub computed_at: SystemTime,
+}
+
+impl ChecksumReport {
+    /// Construct a report from already-computed values.
+    pub fn new(crc: u32, length: u64, matches: bool) -> Self {
+        Self {
+            crc,
+            length,
+            matches,
+            computed_at: SystemTime::now(),
+        }
+    }
+
+    /// Return the covered length as `usize`, saturating on narrow platforms.
+    pub fn length_usize(&self) -> usize {
+        usize::try_from(self.length).unwrap_or(usize::MAX)
+    }
+}
+
+/// Outcome of checking data or accepting a complete optical block grid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntegrityResult {
+    /// The operation completed and produced an auditable report.
+    Valid(ChecksumReport),
+    /// A block update did not contain exactly one 270x480 grid.
+    InvalidBlockLength {
+        /// Number of blocks required by the wire format.
+        expected: usize,
+        /// Number of blocks supplied by the caller.
+        actual: usize,
+    },
+}
+
+impl IntegrityResult {
+    /// Return the successful report, if the operation accepted its input.
+    pub fn report(self) -> Option<ChecksumReport> {
+        match self {
+            Self::Valid(report) => Some(report),
+            Self::InvalidBlockLength { .. } => None,
+        }
+    }
+
+    /// Return whether the operation accepted its input and matched expectation.
+    pub fn matches(self) -> bool {
+        self.report().map(|report| report.matches).unwrap_or(false)
+    }
+}
+
+/// Incremental CRC32 checker with saturating byte accounting.
+///
+/// The checker uses the same IEEE CRC32 implementation as the wire protocol.
+/// Calling [`IntegrityChecker::digest`] never consumes or mutates the running
+/// state, so callers may inspect progress as frequently as desired.
+#[derive(Clone)]
+pub struct IntegrityChecker {
+    hasher: crc32fast::Hasher,
+    length: u64,
+}
+
+impl std::fmt::Debug for IntegrityChecker {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("IntegrityChecker")
+            .field("digest", &format_args!("{:#010x}", self.digest()))
+            .field("length", &self.length)
+            .finish()
+    }
+}
+
+impl Default for IntegrityChecker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl IntegrityChecker {
+    /// Create an empty checker whose digest is the standard empty CRC32 value.
+    pub fn new() -> Self {
+        Self {
+            hasher: crc32fast::Hasher::new(),
+            length: 0,
+        }
+    }
+
+    /// Add bytes and return the current CRC32 without consuming the checker.
+    pub fn update(&mut self, bytes: &[u8]) -> u32 {
+        self.hasher.update(bytes);
+        self.length = self.length.saturating_add(bytes.len() as u64);
+        self.digest()
+    }
+
+    /// Add exactly one 270x480 color-block grid.
+    ///
+    /// Invalid grid lengths are rejected without changing either the digest or
+    /// byte count. Each block is represented by its palette-index byte.
+    pub fn update_block(&mut self, block: &[u8]) -> IntegrityResult {
+        if block.len() != BLOCK_GRID_LEN {
+            return IntegrityResult::InvalidBlockLength {
+                expected: BLOCK_GRID_LEN,
+                actual: block.len(),
+            };
+        }
+        let crc = self.update(block);
+        IntegrityResult::Valid(
