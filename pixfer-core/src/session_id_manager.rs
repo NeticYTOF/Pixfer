@@ -97,9 +97,9 @@ mod tests {
     #[test]
     fn release_frees_id() {
         let mut m = SessionIdManager::new();
-        let a = m.allocate();
+        let _a = m.allocate();
         let b = m.allocate();
-        let c = m.allocate();
+        let _c = m.allocate();
         m.release(b);
         assert!(!m.is_live(b));
         assert_eq!(m.live_count(), 2);
@@ -131,7 +131,7 @@ mod tests {
         let mut m = SessionIdManager::new();
         let a = m.allocate();
         let b = m.allocate();
-        let c = m.allocate();
+        let _c = m.allocate();
         assert_eq!(m.min_live_id(), Some(a));
         m.release(a);
         assert_eq!(m.min_live_id(), Some(b));

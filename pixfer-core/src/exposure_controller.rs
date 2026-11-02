@@ -153,9 +153,9 @@ mod tests {
         let mut c = ExposureController::new(0.9);
         let r = reading(250, 0.1);
         let next = c.next_exposure(&r);
-        assert!(next <= 255);
+        assert_eq!(next, 255);
         let r2 = reading(5, 0.95);
         let next2 = c.next_exposure(&r2);
-        assert!(next2 >= 0);
+        assert_eq!(next2, 0);
     }
 }

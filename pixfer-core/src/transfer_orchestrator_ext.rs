@@ -4,7 +4,6 @@
 
 use crate::compress::zip_bytes;
 use crate::frame_codec::encode_payload;
-use crate::rs::RS_K;
 
 /// The outcome of an orchestrated transfer.
 #[derive(Debug, Clone, PartialEq)]
@@ -165,7 +164,7 @@ mod tests {
         let o = TransferOrchestratorExt::new(223, 500);
         let payload = vec![1u8; 30];
         let mut sends = 0;
-        let mut send = |frame: &[u8]| -> Result<(), String> {
+        let mut send = |_frame: &[u8]| -> Result<(), String> {
             sends += 1;
             Ok(())
         };
@@ -183,7 +182,7 @@ mod tests {
     fn run_reports_send_failure() {
         let o = TransferOrchestratorExt::new(223, 500);
         let payload = vec![1u8; 30];
-        let mut send = |frame: &[u8]| -> Result<(), String> { Err("link down".to_string()) };
+        let mut send = |_frame: &[u8]| -> Result<(), String> { Err("link down".to_string()) };
         let outcome = o.run(&payload, &mut send);
         match outcome {
             TransferOutcomeExt::Failed { reason } => assert!(reason.contains("link down")),

@@ -3,8 +3,6 @@
 //! over-engineered: a "color classifier" for a link that can only see 8
 //! colors.)
 
-use crate::frame_codec::BLOCKS_PER_FRAME;
-
 /// The result of a color-detection pass over a block grid.
 #[derive(Debug, Clone)]
 pub struct DetectionResult {
@@ -84,6 +82,7 @@ impl ColorDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::frame_codec::BLOCKS_PER_FRAME;
 
     #[test]
     fn detect_counts_each_color() {

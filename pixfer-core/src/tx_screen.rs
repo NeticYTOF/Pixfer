@@ -42,7 +42,6 @@ mod tests {
     use super::*;
     use crate::frame_codec::encode;
     use crate::hal::DisplayHal;
-    use crate::protocol::{Frame, FrameKind};
 
     struct FakeDisplay {
         open: bool,
@@ -75,7 +74,7 @@ mod tests {
         let frame =
             crate::protocol::Frame::new(crate::protocol::FrameKind::Chunk, 9, 0, 2, vec![7, 7, 7]);
         let blocks = encode(&frame);
-        let mut disp = FakeDisplay {
+        let disp = FakeDisplay {
             open: false,
             multicolor: true,
             fail_render: false,
@@ -90,7 +89,7 @@ mod tests {
 
     #[test]
     fn render_failure_propagates() {
-        let mut disp = FakeDisplay {
+        let disp = FakeDisplay {
             open: false,
             multicolor: true,
             fail_render: true,
@@ -126,7 +125,7 @@ mod tests {
 
     #[test]
     fn close_resets_state() {
-        let mut disp = FakeDisplay {
+        let disp = FakeDisplay {
             open: true,
             multicolor: true,
             fail_render: false,

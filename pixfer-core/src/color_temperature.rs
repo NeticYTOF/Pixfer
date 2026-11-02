@@ -141,8 +141,8 @@ mod tests {
         let mut c = TemperatureCorrector::new(5500);
         c.compensate(&reading(7000));
         let pal = c.corrected_palette();
-        // Red channel (value 2) should be boosted.
-        assert!(pal[2].r >= 255 || pal[2].r > 255);
+        // Red channel (value 2) is boosted and clamps to max.
+        assert_eq!(pal[2].r, 255);
         // Blue channel (value 4) should be cut.
         assert!(pal[4].b < 255);
     }

@@ -53,9 +53,9 @@ impl ColorSpace {
         let mut best_v: u8 = 0;
         let mut best_d2 = f64::INFINITY;
         for (i, pc) in self.palette.iter().enumerate() {
-            let dr = (c.r as f64 - pc.r as f64);
-            let dg = (c.g as f64 - pc.g as f64);
-            let db = (c.b as f64 - pc.b as f64);
+            let dr = c.r as f64 - pc.r as f64;
+            let dg = c.g as f64 - pc.g as f64;
+            let db = c.b as f64 - pc.b as f64;
             let d2 = dr * dr + dg * dg + db * db;
             if d2 < best_d2 {
                 best_d2 = d2;
@@ -67,9 +67,9 @@ impl ColorSpace {
 
     /// The perceptual distance (squared Euclidean in RGB) between two colors.
     pub fn distance2(&self, a: &Color, b: &Color) -> f64 {
-        let dr = (a.r as f64 - b.r as f64);
-        let dg = (a.g as f64 - b.g as f64);
-        let db = (a.b as f64 - b.b as f64);
+        let dr = a.r as f64 - b.r as f64;
+        let dg = a.g as f64 - b.g as f64;
+        let db = a.b as f64 - b.b as f64;
         dr * dr + dg * dg + db * db
     }
 

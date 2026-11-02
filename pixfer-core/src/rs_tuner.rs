@@ -2,7 +2,7 @@
 //! (Hilariously over-engineered: a "code-rate tuner" for a link that
 //! already fixes RS(255,223).)
 
-use crate::rs::{ReedSolomon, RS_K, RS_N, RS_PARITY, RS_T};
+use crate::rs::{ReedSolomon, RS_N, RS_T};
 // Note: ReedSolomon::new() takes no args; the tuner's `t` is advisory
 // and maps to the coder's fixed RS(255,223) capability (T=16).
 
@@ -72,6 +72,7 @@ impl RSTuner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rs::RS_K;
 
     #[test]
     fn starts_at_default_parity() {

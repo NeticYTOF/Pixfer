@@ -45,9 +45,9 @@ impl ColorLut {
         let mut best_v: u8 = 0;
         let mut best_d2 = f64::INFINITY;
         for (i, pc) in self.palette.iter().enumerate() {
-            let dr = (c.r as f64 - pc.r as f64);
-            let dg = (c.g as f64 - pc.g as f64);
-            let db = (c.b as f64 - pc.b as f64);
+            let dr = c.r as f64 - pc.r as f64;
+            let dg = c.g as f64 - pc.g as f64;
+            let db = c.b as f64 - pc.b as f64;
             let d2 = dr * dr + dg * dg + db * db;
             if d2 < best_d2 {
                 best_d2 = d2;

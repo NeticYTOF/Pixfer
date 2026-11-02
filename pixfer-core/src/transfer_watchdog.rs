@@ -2,7 +2,7 @@
 //! event when no progress is made. (Hilariously over-engineered: a
 //! "watchdog" for a light link that physically moves a few KB/s.)
 
-use crate::timing::{Clock, SystemClock};
+use crate::timing::Clock;
 
 /// The state of the watchdog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

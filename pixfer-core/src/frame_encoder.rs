@@ -4,7 +4,7 @@
 //! camera.)
 
 use crate::frame_codec::{encode, BLOCKS_PER_FRAME};
-use crate::protocol::{Frame, Protocol};
+use crate::protocol::Frame;
 
 /// A frame encoder that renders a `Frame` into the 270x480 block grid.
 ///
@@ -46,6 +46,7 @@ impl FrameEncoder {
 mod tests {
     use super::*;
     use crate::protocol::FrameKind;
+    use crate::protocol::Protocol;
 
     fn chunk(idx: u32, data: &[u8]) -> Frame {
         Frame::new(FrameKind::Chunk, 5, idx, 4, data.to_vec())

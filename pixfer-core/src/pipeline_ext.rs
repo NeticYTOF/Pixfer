@@ -3,12 +3,9 @@
 //! metrics. (Hilariously over-engineered: a "pipeline framework" for a
 //! transfer that physically moves a few KB/s over a phone screen.)
 
-use std::time::Duration;
-
-use crate::compress::{zip_bytes, CompressError};
+use crate::compress::zip_bytes;
 use crate::fingerprint::fnv1a64;
 use crate::frame_codec::encode_payload;
-use crate::reassembly::Reassembler;
 
 /// A stage result: either a transformed payload or an error.
 pub type StageResult = Result<Vec<u8>, PipelineErrorExt>;

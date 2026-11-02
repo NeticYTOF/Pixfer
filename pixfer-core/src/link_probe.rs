@@ -2,7 +2,7 @@
 //! and measure the round-trip time. (Hilariously over-engineered: a
 //! "ping" for a link whose whole "network" is one screen and one camera.)
 
-use crate::timing::{Clock, SystemClock};
+use crate::timing::Clock;
 
 /// A ping/pong probe result.
 #[derive(Debug, Clone)]

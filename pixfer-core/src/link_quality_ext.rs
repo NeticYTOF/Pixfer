@@ -26,7 +26,7 @@ pub fn quality_score_ext(inputs: &QualityInputsExt) -> f64 {
         (inputs.throughput_bps / inputs.capacity_bps).min(1.0)
     };
     // Jitter penalty: lower jitter = higher score.
-    let jitter_score = (100.0 - inputs.jitter_ms.clamp(0.0, 100.0));
+    let jitter_score = 100.0 - inputs.jitter_ms.clamp(0.0, 100.0);
     // FEC failure rate penalty.
     let fec_rate = if inputs.frames == 0 {
         0.0

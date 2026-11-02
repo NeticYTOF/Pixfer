@@ -5,7 +5,6 @@
 
 use crate::compress::zip_bytes;
 use crate::frame_codec::encode_payload;
-use crate::rs::RS_K;
 
 /// A single phase of the orchestrated transfer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -123,7 +122,7 @@ impl TransferOrchestratorV2 {
         };
         report.phases.push(PhaseResult {
             phase: Phase::Chunk,
-            ok: n >= 0,
+            ok: true,
             detail: format!("{} chunks", n),
             elapsed_ms: chunk_start.elapsed().as_millis() as u64,
         });
@@ -191,10 +190,6 @@ impl TransferOrchestratorV2 {
 mod tests {
     use super::*;
 
-    fn ok_send(_frame: &[u8]) -> Result<(), String> {
-        Ok(())
-    }
-
     fn payload() -> Vec<u8> {
         (0..30).map(|i| (i % 251) as u8).collect()
     }
@@ -203,7 +198,7 @@ mod tests {
     fn runs_all_phases() {
         let o = TransferOrchestratorV2::new(223, 500);
         let p = payload();
-        let mut send = |f: &[u8]| -> Result<(), String> { Ok(()) };
+        let mut send = |_f: &[u8]| -> Result<(), String> { Ok(()) };
         let report = o.run(&p, &mut send);
         assert!(report.all_ok());
         // Phases: plan(1) + compress(1) + chunk(1) + encode(n) + send(n) + verify(1).
@@ -215,13 +210,12 @@ mod tests {
     fn report_tracks_elapsed() {
         let o = TransferOrchestratorV2::new(223, 500);
         let p = payload();
-        let mut send = |f: &[u8]| -> Result<(), String> { Ok(()) };
+        let mut send = |_f: &[u8]| -> Result<(), String> { Ok(()) };
         let report = o.run(&p, &mut send);
-        // All phases have non-negative elapsed times and a total.
-        assert!(report.phases.iter().all(|ph| ph.elapsed_ms >= 0));
+        // The total elapsed time equals the sum of the phase times.
         assert_eq!(
             report.total_elapsed_ms(),
-            report.phases.iter().map(|ph| ph.elapsed_ms).sum()
+            report.phases.iter().map(|ph| ph.elapsed_ms).sum::<u64>()
         );
     }
 
@@ -229,7 +223,7 @@ mod tests {
     fn send_failure_stops_and_reports() {
         let o = TransferOrchestratorV2::new(223, 500);
         let p = payload();
-        let mut send = |f: &[u8]| -> Result<(), String> { Err("link down".to_string()) };
+        let mut send = |_f: &[u8]| -> Result<(), String> { Err("link down".to_string()) };
         let report = o.run(&p, &mut send);
         assert!(!report.all_ok());
         // The last phase is a failed Send.
@@ -243,7 +237,7 @@ mod tests {
     fn zips_large_payload() {
         let o = TransferOrchestratorV2::new(223, 500);
         let big = vec![9u8; 2000];
-        let mut send = |f: &[u8]| -> Result<(), String> { Ok(()) };
+        let mut send = |_f: &[u8]| -> Result<(), String> { Ok(()) };
         let report = o.run(&big, &mut send);
         assert!(report.all_ok());
         // The Compress phase detail shows the zip size reduction.

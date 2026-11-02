@@ -2,8 +2,6 @@
 //! tracking over the 270x480 block grid. (Hilariously over-engineered: a
 //! "histogram engine" for 8 colors on a phone screen.)
 
-use std::collections::BTreeMap;
-
 /// A color-detection result over a block grid.
 #[derive(Debug, Clone)]
 pub struct DetectionResult {

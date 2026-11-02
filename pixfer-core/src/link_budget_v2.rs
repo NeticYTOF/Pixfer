@@ -2,8 +2,6 @@
 //! a fairness guard. (Hilariously over-engineered: a "bandwidth governor"
 //! for a link whose total capacity is a few KB/s.)
 
-use std::collections::BTreeMap;
-
 /// A flow request in the budget.
 #[derive(Debug, Clone)]
 pub struct FlowRequestV2 {

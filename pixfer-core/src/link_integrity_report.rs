@@ -2,8 +2,6 @@
 //! into a single health report. (Hilariously over-engineered: an "integrity
 //! dashboard" for a link whose entire payload is 223 bytes at a time.)
 
-use crate::integrity::IntegrityResult;
-
 /// A single integrity-check outcome.
 #[derive(Debug, Clone, Copy)]
 pub struct IntegritySample {

@@ -3,7 +3,7 @@
 //! "progress dashboard" for a transfer that takes minutes to move a few
 //! KB.)
 
-use crate::transfer_plan::TransferPlan;
+
 
 /// A fine-grained progress snapshot.
 #[derive(Debug, Clone, Copy)]
