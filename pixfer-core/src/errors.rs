@@ -6,7 +6,7 @@
 use std::fmt;
 
 /// Severity levels used by logging/metrics.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Severity {
     Trace,
     Debug,
