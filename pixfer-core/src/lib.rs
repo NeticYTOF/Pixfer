@@ -63,6 +63,7 @@ pub mod metrics;
 pub mod modulation;
 pub mod observability;
 pub mod packet_reorder_buffer;
+pub mod payload_crc_ext;
 pub mod pipeline;
 pub mod pipeline_ext;
 pub mod policy;
@@ -84,6 +85,7 @@ pub mod scheduler;
 pub mod screen_brightness_governor;
 pub mod screen_renderer;
 pub mod session;
+pub mod session_id_manager;
 pub mod session_log;
 pub mod session_registry;
 pub mod state;
@@ -185,6 +187,7 @@ pub use modulation::{
 };
 pub use observability::Observability;
 pub use packet_reorder_buffer::{BufferedPacket, PacketReorderBuffer};
+pub use payload_crc_ext::{ExtChecksumResult, PayloadCrcExt};
 pub use pipeline::{
     ChunkStage, CompressStage, EncodeStage, Pipeline, PipelineContext, PipelineError,
     PipelineStage, ValidateStage,
@@ -217,6 +220,7 @@ pub use scheduler::{
 pub use screen_brightness_governor::{BrightnessReading, ScreenBrightnessGovernor};
 pub use screen_renderer::{ScreenBuffer, ScreenRenderer};
 pub use session::{Role, SessionState, TransferSession};
+pub use session_id_manager::{SessionEntryExt, SessionIdManager};
 pub use session_log::{SessionEvent, SessionLog};
 pub use session_registry::{SessionEntry, SessionRegistry};
 pub use state::{FsmEvent, FsmState, TransferFsm};
