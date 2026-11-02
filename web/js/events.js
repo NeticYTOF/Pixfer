@@ -167,6 +167,7 @@ export function throttle(fn, waitMs) {
 export function throttleLeading(fn, waitMs) {
   let waiting = false;
   let timer = null;
+  let lastArgs = null;
   const throttled = (...args) => {
     if (waiting) {
       lastArgs = args;
@@ -189,7 +190,6 @@ export function throttleLeading(fn, waitMs) {
       waiting = false;
     }, waitMs);
   };
-  let lastArgs = null;
   throttled.cancel = () => {
     if (timer) {
       clearTimeout(timer);
