@@ -52,6 +52,7 @@ pub mod link_budget_ext;
 pub mod link_budget_v2;
 pub mod link_calibration_store;
 pub mod link_capacity;
+pub mod link_etiquette;
 pub mod link_fingerprint;
 pub mod link_integrity_report;
 pub mod link_jitter_meter;
