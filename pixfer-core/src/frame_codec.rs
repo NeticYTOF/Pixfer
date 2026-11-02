@@ -2,7 +2,7 @@
 //! format and decode it back. (Hilariously over-engineered: a "codec"
 //! for 3 bits per block.)
 
-use crate::protocol::{Frame, FrameKind, Protocol};
+use crate::protocol::{Frame, Protocol};
 use crate::rs::RS_K;
 
 /// Encode a `Frame` into the full 270x480 block grid (delegates to
@@ -36,7 +36,7 @@ pub fn encode_payload(payload: &[u8]) -> Result<Vec<u8>, String> {
     let mut out = vec![0u8; blocks_needed];
     // A single global bit cursor walks the payload bit-stream LSB-first.
     let mut g = 0usize;
-    for (i, block) in out.iter_mut().enumerate() {
+    for (_i, block) in out.iter_mut().enumerate() {
         // Extract the next 3 bits from the global bit stream.
         let mut v: u8 = 0;
         for k in 0..3 {
@@ -83,6 +83,7 @@ pub fn decode_payload(blocks: &[u8]) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::protocol::FrameKind;
 
     #[test]
     fn encode_roundtrip_via_protocol() {
