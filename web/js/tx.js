@@ -7,9 +7,12 @@
 // so the receiver always knows exactly which frames it is missing. The
 // receiver flashes a Done QR once it has every chunk; seeing Done stops
 // the loop.
+//
+// The sender's camera is OPTIONAL: without it the loop still streams (it
+// just cannot see the receiver's Done, so it stops at MAX_PASSES).
 
 import * as core from "./core.js";
-import { openCamera, makeEmitter, fitCanvas } from "./light.js";
+import { openCamera, makeEmitter, fitCanvas, keepScreenAwake } from "./light.js";
 import { qrEncode } from "./qr.js";
 import { qrDecodeVideo } from "./qrdecode.js";
 
@@ -43,9 +46,16 @@ export function mountTx(root, fflate, onBack) {
   let looping = false;
   let pass = 0;
   let cursor = -1; // -1 = ping phase, 0..N-1 = chunk frames
+  let pongSeen = false;
+  let startedAt = 0;
+  let releaseWake = null;
 
   function setStatus(t) {
     statusEl.textContent = t;
+  }
+
+  function elapsedS() {
+    return startedAt ? ((performance.now() - startedAt) / 1000).toFixed(1) : "0.0";
   }
 
   function stopLoop() {
@@ -74,9 +84,15 @@ export function mountTx(root, fflate, onBack) {
     const f = frameForCursor();
     emitter.setQr(qrEncode(f));
     if (cursor < 0) {
-      setStatus("loop pass " + (pass + 1) + " — waiting for receiver…");
+      setStatus(
+        (pongSeen ? "receiver is listening — looping frames… " : "waiting for a receiver… ") +
+          "pass " + (pass + 1) + " (" + elapsedS() + "s)"
+      );
     } else {
-      setStatus("pass " + (pass + 1) + " — flashing frame " + (cursor + 1) + "/" + totalChunks);
+      setStatus(
+        "pass " + (pass + 1) + " — flashing frame " + (cursor + 1) + "/" + totalChunks +
+          " (" + elapsedS() + "s" + (pongSeen ? "" : ", no receiver yet") + ")"
+      );
       progressFill.style.width = (((cursor + 1) / totalChunks) * 100) + "%";
     }
     dwellTimer = setTimeout(() => {
@@ -87,7 +103,7 @@ export function mountTx(root, fflate, onBack) {
         pass++;
         if (pass >= MAX_PASSES) {
           stopLoop();
-          setStatus("gave up after " + MAX_PASSES + " passes — no Done from receiver");
+          setStatus("stopped after " + MAX_PASSES + " passes — no Done from the receiver. Try again?");
           return;
         }
       }
@@ -97,39 +113,56 @@ export function mountTx(root, fflate, onBack) {
 
   fileInput.addEventListener("change", async () => {
     const file = fileInput.files && fileInput.files[0];
+    fileInput.value = ""; // re-picking the same file must fire "change" again
     if (!file) return;
     nameEl.textContent = file.name;
+    if (file.size === 0) {
+      setStatus("that file is empty — pick another one");
+      return;
+    }
     setStatus("reading " + file.name + "…");
-    const raw = new Uint8Array(await file.arrayBuffer());
+    let raw;
+    try {
+      raw = new Uint8Array(await file.arrayBuffer());
+    } catch (e) {
+      setStatus("could not read the file: " + e.message);
+      return;
+    }
     const plan = core.transferPlan(file.size);
     if (plan.shouldZip) {
-      data = fflate.zipSync({ [file.name]: raw });
-      setStatus(
-        "zipping — est. " +
-          plan.estSeconds.toFixed(0) +
-          "s > " +
-          core.ZIP_THRESHOLD_S +
-          "s, auto-zip on"
-      );
+      try {
+        data = fflate.zipSync({ [file.name]: raw });
+        setStatus(
+          "zipping — est. " + plan.estSeconds.toFixed(0) + "s > " + core.ZIP_THRESHOLD_S + "s, auto-zip on"
+        );
+      } catch (e) {
+        setStatus("could not zip the file: " + e.message);
+        return;
+      }
     } else {
       data = raw;
-      setStatus(
-        (file.size / 1048576).toFixed(2) +
-          " MB, est. " +
-          plan.estSeconds.toFixed(1) +
-          "s, sending as-is"
-      );
     }
     totalChunks = Math.ceil(data.length / core.RS_K);
-    const sessionId = (Math.random() * 0x10000) | 0;
-    session = core.newFrame("Ping", sessionId, 0, totalChunks, null);
+    if (totalChunks > core.maxChunkCount()) {
+      setStatus("too big for this link — over " + (core.MAX_TRANSFER_BYTES / 1048576) + " MB even zipped");
+      return;
+    }
+    if (!plan.shouldZip) {
+      setStatus((file.size / 1048576).toFixed(2) + " MB, est. " + plan.estSeconds.toFixed(1) + "s, sending as-is");
+    }
     metaEl.textContent = totalChunks + " frames";
     progressFill.style.width = "0%";
 
     stopLoop();
     pass = 0;
     cursor = -1;
+    pongSeen = false;
+    startedAt = performance.now();
+    const sessionId = (Math.random() * 0x10000) | 0;
+    session = core.newFrame("Ping", sessionId, 0, totalChunks, null);
     looping = true;
+    if (releaseWake) releaseWake();
+    releaseWake = await keepScreenAwake();
 
     if (!camHandle) {
       try {
@@ -140,7 +173,11 @@ export function mountTx(root, fflate, onBack) {
         });
         stepLoop();
       } catch (e) {
-        setStatus("camera: " + e.message);
+        setStatus(
+          "camera unavailable (" + e.message + ") — still sending, but the Done signal can't be seen." +
+            (typeof window !== "undefined" && !window.isSecureContext ? " Camera needs https:// or localhost." : "")
+        );
+        stepLoop(); // camera is optional in loop mode
       }
     } else {
       stepLoop();
@@ -148,16 +185,16 @@ export function mountTx(root, fflate, onBack) {
   });
 
   function route(f) {
-    if (f.kind === "Pong") {
-      setStatus("receiver is listening — looping frames…");
-    } else if (f.kind === "Done") {
-      if (session && f.sessionId === session.sessionId) {
-        stopLoop();
-        progressFill.style.width = "100%";
-        metaEl.textContent = "done";
-        setStatus("done — receiver confirmed every frame");
-        emitter.setBlocks(new Uint8Array(core.GRID_W * core.GRID_H).fill(7));
-      }
+    if (!session) return;
+    if (f.sessionId !== session.sessionId) return; // foreign transfer nearby
+    if (f.kind === "Pong" && f.totalChunks === totalChunks) {
+      pongSeen = true;
+    } else if (f.kind === "Done" && f.totalChunks === totalChunks) {
+      stopLoop();
+      progressFill.style.width = "100%";
+      metaEl.textContent = "done";
+      setStatus("done — receiver confirmed every frame (" + elapsedS() + "s)");
+      emitter.setBlocks(new Uint8Array(core.GRID_W * core.GRID_H).fill(7));
     }
   }
 
@@ -169,6 +206,10 @@ export function mountTx(root, fflate, onBack) {
   function stop() {
     stopLoop();
     emitter.stop();
+    if (releaseWake) {
+      releaseWake();
+      releaseWake = null;
+    }
     if (camHandle) {
       camHandle.stop();
       camHandle = null;

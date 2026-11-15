@@ -28,11 +28,12 @@ import {
 
 const DS = 4; // downscale factor for detection
 
-// Versions the pixfer protocol actually uses: chunk frames (246 bytes) fit
-// v11 at EC level M; control frames fit v2. Versions below 7 carry no
-// version-info blocks, so v11 must be tried explicitly in the fallback
-// loop when the version word can't be read.
-const FALLBACK_VERSIONS = [11, 13, 2, 10, 12, 14];
+// Every version the pixfer protocol can emit, most-likely first. Full
+// chunk frames (246 B) encode to v11; the short LAST chunk can land
+// anywhere from v10 down to v2 (a 1-byte payload is a 24-byte frame);
+// control frames are v2. Versions below 7 carry no version-info blocks,
+// so they can only be found through this list.
+const FALLBACK_VERSIONS = [11, 10, 9, 8, 7, 6, 5, 4, 3, 2];
 
 // ---------- dark/light classification + connected components ----------
 
@@ -487,10 +488,13 @@ export function qrDecodeFromPixels(data, w, h) {
     const sample = makeSampler(data, w, h, g);
     const mods = sampleGrid(g.n, sample);
     const { mask, inverted } = resolveMask(mods, g.n);
-    if (mask < 0) return { ok: false, error: "FormatBad" };
-    const res = decodeVersion(mods, g.n, version, mask);
-    if (!res.ok) return { ok: false, error: res.error, inverted };
-    return { ok: true, frame: res.frame, inverted };
+    if (mask >= 0) {
+      const res = decodeVersion(mods, g.n, version, mask);
+      if (res.ok) return { ok: true, frame: res.frame, inverted };
+    }
+    // Fall through to the fallback list: the sampled "version word" can
+    // pass the 18-bit BCH check by chance on codes that carry no version
+    // info (v2-v6), so it must never be trusted over a full decode.
   }
 
   // Version info unreadable: resample per candidate version until RS-decode
@@ -574,7 +578,7 @@ function decodeVersion(mods, n, version, mask) {
   for (let i = 0; i < dataBytes.length; i++) {
     for (let j = 7; j >= 0; j--) frameBits.push((dataBytes[i] >> j) & 1);
   }
-  const nFrameBytes = Math.floor((frameBits.length - prefixBits) / 8);
+  const nFrameBytes = Math.max(0, Math.floor((frameBits.length - prefixBits) / 8));
   const frameBytes = new Uint8Array(nFrameBytes);
   for (let i = 0; i < nFrameBytes; i++) {
     let v = 0;

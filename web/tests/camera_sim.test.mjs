@@ -335,11 +335,13 @@ test("camera sim: loop transfer recaptures lost frames (shake + off-screen)", ()
   const rng = makeRng(seed);
   const sessionId = 9182;
 
-  // sender payload: N distinct chunks
+  // sender payload: N distinct chunks; the LAST one is short (54 B) so
+  // the loop also exercises a small-version QR (v5), like real files do
   const payloads = [];
   for (let i = 0; i < N; i++) {
-    const p = new Uint8Array(core.RS_K);
-    for (let b = 0; b < core.RS_K; b++) p[b] = (i * 31 + b * 7 + 5) & 0xff;
+    const len = i === N - 1 ? 54 : core.RS_K;
+    const p = new Uint8Array(len);
+    for (let b = 0; b < len; b++) p[b] = (i * 31 + b * 7 + 5) & 0xff;
     payloads.push(p);
   }
   const pings = qrEncode(core.newFrame("Ping", sessionId, 0, N, null));

@@ -4,13 +4,20 @@
 // missing and just waits for the loop to bring them around again),
 // auto-unzip zipped payloads, download the file, and flash a Done QR
 // until the sender stops.
+//
+// Hardening: chunk metadata is validated before storage (bounds, payload
+// size, chunk-count cap), a foreign transfer can only take over via a
+// Ping — never via a mid-stream Chunk — and a finished transfer still
+// accepts a fresh Ping so the same pair can send a second file without
+// going back to the landing screen.
 
 import * as core from "./core.js";
-import { openCamera, makeEmitter, fitCanvas } from "./light.js";
+import { openCamera, makeEmitter, fitCanvas, keepScreenAwake } from "./light.js";
 import { qrEncode } from "./qr.js";
 import { qrDecodeVideo } from "./qrdecode.js";
 
 const PONG_DWELL_MS = 400;
+const DONE_FLASH_MS = 30000; // stop flashing Done after this; the sender has seen it or is gone
 
 export function mountRx(root, fflate, onBack) {
   const video = root.querySelector("#rx-video");
@@ -30,6 +37,8 @@ export function mountRx(root, fflate, onBack) {
   // Idle screen: full-white grid (all blocks 7).
   emitter.setBlocks(new Uint8Array(core.GRID_W * core.GRID_H).fill(7));
   let pongTimer = null;
+  let doneTimer = null;
+  let releaseWake = null;
 
   let session = null;
   let sessionId = -1;
@@ -45,11 +54,16 @@ export function mountRx(root, fflate, onBack) {
       const dec = qrDecodeVideo(v);
       if (dec.ok) route(dec.frame);
     })
-    .then((h) => {
+    .then(async (h) => {
       camHandle = h;
+      releaseWake = await keepScreenAwake();
     })
     .catch((e) => {
-      statusEl.textContent = "camera: " + e.message;
+      statusEl.textContent =
+        "camera: " + e.message +
+        (typeof window !== "undefined" && !window.isSecureContext
+          ? " — camera needs https:// or localhost"
+          : " — allow camera access and try again");
     });
 
   function missingList() {
@@ -74,6 +88,7 @@ export function mountRx(root, fflate, onBack) {
   }
 
   function flashBriefly(frame) {
+    if (finished) return;
     emitter.setQr(qrEncode(frame));
     if (pongTimer) clearTimeout(pongTimer);
     pongTimer = setTimeout(() => {
@@ -83,7 +98,8 @@ export function mountRx(root, fflate, onBack) {
   }
 
   function ensureSession(sid, total) {
-    if (session && sessionId === sid) return;
+    if (pongTimer) clearTimeout(pongTimer);
+    if (doneTimer) clearTimeout(doneTimer);
     sessionId = sid;
     totalChunks = total;
     chunks = new Array(total).fill(null);
@@ -94,31 +110,46 @@ export function mountRx(root, fflate, onBack) {
   }
 
   function route(f) {
-    if (finished) return;
     if (f.kind === "Ping") {
-      ensureSession(f.sessionId, f.totalChunks);
+      // A Ping is the only way a foreign/new transfer may take over —
+      // even after a finished transfer (send a second file without
+      // going back to the landing screen).
+      if (f.totalChunks < 1 || f.totalChunks > core.maxChunkCount()) return; // corrupt/allocation guard
+      const sameSession = session && f.sessionId === sessionId && f.totalChunks === totalChunks;
+      if (!sameSession || finished) ensureSession(f.sessionId, f.totalChunks);
       flashBriefly(core.newFrame("Pong", f.sessionId, 0, f.totalChunks, null));
-    } else if (f.kind === "Chunk") {
+      return;
+    }
+    if (finished) return;
+    if (f.kind !== "Chunk") return;
+    if (!core.validChunkMeta(f.chunkIdx, f.totalChunks, f.payload.length)) return; // corrupt or hostile frame
+    if (session) {
+      // Mid-stream chunks from a different session or with a different
+      // chunk count are ignored — only a Ping switches transfers.
+      if (f.sessionId !== sessionId || f.totalChunks !== totalChunks) return;
+    } else {
+      // joined mid-pass: the first frame we ever catch is a Chunk
       ensureSession(f.sessionId, f.totalChunks);
-      if (!chunks[f.chunkIdx]) {
-        chunks[f.chunkIdx] = f.payload;
-        totalBytes += f.payload.length;
-      }
-      const got = chunks.filter(Boolean).length;
-      if (totalChunks > 0) {
-        progressFill.style.width = (got / totalChunks) * 100 + "%";
-      }
-      if (got < totalChunks) {
-        // frame numbers make the losses visible: list up to 12 missing
-        const missing = missingList();
-        const shown = missing.slice(0, 12).map((i) => i + 1).join(", ");
-        statusEl.textContent =
-          got + "/" + totalChunks + " frames — waiting for " +
-          (missing.length > 12 ? shown + ", …" : shown) +
-          " to come around again";
-      } else {
-        finish();
-      }
+    }
+
+    if (!chunks[f.chunkIdx]) {
+      chunks[f.chunkIdx] = f.payload;
+      totalBytes += f.payload.length;
+    }
+    const got = chunks.filter(Boolean).length;
+    if (totalChunks > 0) {
+      progressFill.style.width = (got / totalChunks) * 100 + "%";
+    }
+    if (got < totalChunks) {
+      // frame numbers make the losses visible: list up to 12 missing
+      const missing = missingList();
+      const shown = missing.slice(0, 12).map((i) => i + 1).join(", ");
+      statusEl.textContent =
+        got + "/" + totalChunks + " frames — waiting for " +
+        (missing.length > 12 ? shown + ", …" : shown) +
+        " to come around again";
+    } else {
+      finish();
     }
   }
 
@@ -144,9 +175,15 @@ export function mountRx(root, fflate, onBack) {
       downloadBlob(new Blob([out], { type: "application/octet-stream" }), "pixfer-file.bin");
       statusEl.textContent = "saved";
     }
-    // Tell the sender to stop: keep flashing Done until it reacts.
+    // Tell the sender to stop: keep flashing Done for a while so a
+    // shake/blur cannot make it miss the signal.
     if (pongTimer) clearTimeout(pongTimer);
     emitter.setQr(qrEncode(core.newFrame("Done", sessionId, 0, totalChunks, null)));
+    if (doneTimer) clearTimeout(doneTimer);
+    doneTimer = setTimeout(() => {
+      emitter.setBlocks(new Uint8Array(core.GRID_W * core.GRID_H).fill(7));
+      if (session) statusEl.textContent = "saved — you can go back, or wait for another transfer";
+    }, DONE_FLASH_MS);
   }
 
   function isZip(b) {
@@ -195,6 +232,11 @@ export function mountRx(root, fflate, onBack) {
   function stop() {
     emitter.stop();
     if (pongTimer) clearTimeout(pongTimer);
+    if (doneTimer) clearTimeout(doneTimer);
+    if (releaseWake) {
+      releaseWake();
+      releaseWake = null;
+    }
     if (camHandle) {
       camHandle.stop();
       camHandle = null;

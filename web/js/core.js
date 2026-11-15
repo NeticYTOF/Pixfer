@@ -489,6 +489,30 @@ export const DEFAULT_THROUGHPUT = 2_000_000;
 // Zip if estimated transfer takes longer than this many seconds.
 export const ZIP_THRESHOLD_S = 30;
 
+// Hard sanity cap on a single light-link transfer. Chunk counts are bounded
+// by it so a corrupted or hostile header can never make the receiver
+// allocate an unbounded array.
+export const MAX_TRANSFER_BYTES = 256 * 1024 * 1024;
+
+export function maxChunkCount() {
+  return Math.ceil(MAX_TRANSFER_BYTES / RS_K);
+}
+
+// Validate a decoded Chunk frame's metadata before the receiver stores
+// it: index in range, sane payload size, bounded chunk count, and every
+// chunk except the last must be full-size (the sender only shortens the
+// last one).
+export function validChunkMeta(chunkIdx, totalChunks, payloadLen) {
+  if (!Number.isInteger(chunkIdx) || !Number.isInteger(totalChunks) || !Number.isInteger(payloadLen)) {
+    return false;
+  }
+  if (totalChunks < 1 || totalChunks > maxChunkCount()) return false;
+  if (chunkIdx < 0 || chunkIdx >= totalChunks) return false;
+  if (payloadLen < 1 || payloadLen > RS_K) return false;
+  if (chunkIdx < totalChunks - 1 && payloadLen !== RS_K) return false;
+  return true;
+}
+
 export function estimateSeconds(size) {
   return size / DEFAULT_THROUGHPUT;
 }
