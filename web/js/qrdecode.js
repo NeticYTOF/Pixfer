@@ -679,28 +679,60 @@ function decodeAtCenterCrop(video, vw, vh) {
     cv.height = side;
   }
   const ctx = cv.getContext("2d", { willReadFrequently: true });
-  ctx.imageSmoothingEnabled = false;
+  ctx.imageSmoothingEnabled = true; // 1:1 crop - smoothing irrelevant, just not nearest
   ctx.drawImage(video, x0, y0, side, side, 0, 0, side, side);
   const d = ctx.getImageData(0, 0, side, side).data;
   return qrDecodeFromPixels(d, side, side);
 }
 
-const scaleCanvases = new Map();
-function decodeAtScale(video, vw, vh, ds) {
-  const w = Math.max(2, (vw / ds) | 0);
-  const h = Math.max(2, (vh / ds) | 0);
-  let cv = scaleCanvases.get(ds);
+const downscaleCache = new Map();
+function getCv(key, w, h) {
+  let cv = downscaleCache.get(key);
   if (!cv) {
     cv = document.createElement("canvas");
-    scaleCanvases.set(ds, cv);
+    downscaleCache.set(key, cv);
   }
   if (cv.width !== w || cv.height !== h) {
     cv.width = w;
     cv.height = h;
   }
+  return cv;
+}
+
+function drawStage(cv, src, w, h) {
   const ctx = cv.getContext("2d", { willReadFrequently: true });
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(video, 0, 0, w, h);
+  // Smoothing ON is the whole point: each 2x halving low-passes the
+  // frame like a real ISP. imageSmoothingEnabled=false (nearest-
+  // neighbor decimation) aliases the sending screen's pixel grid and
+  // moire into the buffer and destroys module contrast at distance.
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(src, 0, 0, w, h);
+  return ctx;
+}
+
+function decodeAtScale(video, vw, vh, ds) {
+  const w = Math.max(2, (vw / ds) | 0);
+  const h = Math.max(2, (vh / ds) | 0);
+  // Anti-aliased stepped downscale: halve in chained 2x stages until the
+  // target size instead of one big decimation, so every stage stays
+  // low-passed. One extra GPU draw per frame for ds=4; nothing for ds=2.
+  let src = video;
+  let srcW = vw;
+  let srcH = vh;
+  let stage = 0;
+  while (srcW > w * 2 && srcH > h * 2) {
+    const halfW = Math.max(w, (srcW / 2) | 0);
+    const halfH = Math.max(h, (srcH / 2) | 0);
+    const cv = getCv(`${ds}:${stage}`, halfW, halfH);
+    drawStage(cv, src, halfW, halfH);
+    src = cv;
+    srcW = halfW;
+    srcH = halfH;
+    stage++;
+  }
+  const out = getCv(`${ds}:out`, w, h);
+  const ctx = drawStage(out, src, w, h);
   const d = ctx.getImageData(0, 0, w, h).data;
   return qrDecodeFromPixels(d, w, h);
 }

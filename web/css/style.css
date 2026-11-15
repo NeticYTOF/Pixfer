@@ -239,7 +239,7 @@ body {
   position: absolute;
   right: 16px;
   bottom: calc(36px + env(safe-area-inset-bottom));
-  width: min(52vw, 140px);
+  width: min(56vw, 180px);
   aspect-ratio: 1;
   border: 1px solid var(--line);
   border-radius: 12px;

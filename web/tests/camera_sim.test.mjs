@@ -112,7 +112,11 @@ function makeScreenSampler(qr, { boxPx, cx, cy, rot, colorRot }) {
 
 // Separable gaussian blur evaluated only at the DS-subsampled pixel
 // positions (that's all the decoder ever sees), with white balance,
-// exposure scale and per-channel sensor noise.
+// exposure scale and per-channel sensor noise. The gaussian models the
+// browser's anti-aliased downscale chain (qrdecode.js draws in smoothed
+// 2x stages); pure nearest-neighbor decimation — what
+// imageSmoothingEnabled=false did — aliases the sender's screen pixel
+// grid into the buffer and destroys module contrast at distance.
 const kernelCache = new Map();
 function kernel(sigma) {
   if (kernelCache.has(sigma)) return kernelCache.get(sigma);

@@ -118,7 +118,7 @@ export function mountRx(root, fflate, onBack) {
     const scale = Math.max(cw / vw, ch / vh);
     const dw = vw * scale;
     const dh = vh * scale;
-    ctx.imageSmoothingEnabled = false;
+    ctx.imageSmoothingEnabled = true;
     ctx.clearRect(0, 0, cw, ch);
     ctx.drawImage(v, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
   }
@@ -238,6 +238,7 @@ export function mountRx(root, fflate, onBack) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
+  let exposureLocked = false;
   lockBtn.addEventListener("click", async () => {
     if (!camHandle) {
       lockBtn.textContent = "no camera";
@@ -248,16 +249,27 @@ export function mountRx(root, fflate, onBack) {
     lockBtn.textContent = "…";
     try {
       const caps = await track.getCapabilities();
-      if (caps.exposureTime && caps.exposureMode) {
-        await track.applyConstraints({
-          advanced: [{ exposureMode: "manual", exposureTime: caps.exposureTime.min }],
-        });
-        lockBtn.textContent = "exposure locked";
+      if (exposureLocked) {
+        // toggle back to continuous auto-exposure
+        await track.applyConstraints({ advanced: [{ exposureMode: "continuous" }] });
+        exposureLocked = false;
+        lockBtn.textContent = "lock exposure";
+        return;
+      }
+      const settings = await track.getSettings();
+      if (caps.exposureTime && caps.exposureMode && settings.exposureTime) {
+        // Lock at the CURRENT exposure: freezing auto-exposure stops the
+        // hunting the flashing screen provokes, without the black preview
+        // that a minimum-shutter lock would cause indoors.
+        const cur = Math.min(caps.exposureTime.max, Math.max(caps.exposureTime.min, settings.exposureTime));
+        await track.applyConstraints({ advanced: [{ exposureMode: "manual", exposureTime: cur }] });
+        exposureLocked = true;
+        lockBtn.textContent = "exposure locked ✓ — tap to unlock";
       } else {
         lockBtn.textContent = "lock unavailable";
       }
     } catch (e) {
-      lockBtn.textContent = "lock unavailable";
+      lockBtn.textContent = exposureLocked ? "unlock failed" : "lock unavailable";
     }
   });
 
