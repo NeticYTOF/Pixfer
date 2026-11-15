@@ -23,7 +23,7 @@
           <button id="btn-tx" class="mode-btn accent">send a file</button>
           <button id="btn-rx" class="mode-btn">receive a file</button>
         </div>
-        <p class="hint">open this page on two devices — one sends, one receives.</p>
+        <p class="hint">open this page on two devices — one sends, one receives.<br />keep both screens awake and the tab visible; cameras need https:// or localhost.</p>
       </div>
       <div class="landing-side">
         <div class="swatch-strip">
@@ -50,12 +50,6 @@
         <span id="tx-filename">choose a file</span>
       </label>
       <span id="tx-meta" class="bar-meta"></span>
-      <div class="cal">
-        <label>block px<input type="range" id="tx-blockpx" min="2" max="16" step="1" value="8" /></label>
-        <label>off x<input type="range" id="tx-offx" min="-60" max="60" step="1" value="0" /></label>
-        <label>off y<input type="range" id="tx-offy" min="-60" max="60" step="1" value="0" /></label>
-        <label>gain<input type="range" id="tx-gain" min="0.5" max="3" step="0.1" value="1" /></label>
-      </div>
       <button id="tx-back" class="ghost">back</button>
     </header>
     <div class="stage">
@@ -70,12 +64,6 @@
   <section id="rx-view" class="view" hidden>
     <header class="bar">
       <span class="bar-title">receive</span>
-      <div class="cal">
-        <label>block px<input type="range" id="rx-blockpx" min="2" max="16" step="1" value="8" /></label>
-        <label>off x<input type="range" id="rx-offx" min="-60" max="60" step="1" value="0" /></label>
-        <label>off y<input type="range" id="rx-offy" min="-60" max="60" step="1" value="0" /></label>
-        <label>gain<input type="range" id="rx-gain" min="0.5" max="3" step="0.1" value="1" /></label>
-      </div>
       <button id="rx-lock" class="ghost">lock exposure</button>
       <button id="rx-back" class="ghost">back</button>
     </header>
@@ -83,7 +71,7 @@
       <video id="rx-video" class="cam-src" muted playsinline></video>
       <canvas id="rx-canvas" class="cam-preview"></canvas>
       <canvas id="rx-emit" class="light-canvas"></canvas>
-      <div id="rx-status" class="status">point your camera at the sending screen</div>
+      <div id="rx-status" class="status">point your camera at the sending screen — fill the view with the colored QR box</div>
       <div class="progress"><div id="rx-progress" class="progress-fill"></div></div>
     </div>
   </section>

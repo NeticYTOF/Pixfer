@@ -130,14 +130,6 @@ body {
 }
 .ghost:hover { color: var(--text); border-color: var(--accent); }
 
-/* calibration sliders */
-.cal { display: flex; gap: 12px; flex-wrap: wrap; }
-.cal label {
-  display: flex; align-items: center; gap: 6px;
-  color: var(--muted); font-size: 12px;
-}
-.cal input[type="range"] { width: 110px; accent-color: var(--accent); }
-
 /* ---------- stage: centered QR-code-sized light canvas ---------- */
 .stage {
   position: relative;
@@ -147,8 +139,9 @@ body {
   justify-content: center;
   overflow: hidden;
 }
-/* The 270x480 grid renders into a square QR-code-sized box, centered in
-   the stage — not stretched across the whole screen. */
+/* The flashing QR renders into this square box, centered in the stage —
+   like a traditional QR code sitting on the screen, not a full-screen
+   grid. */
 .light-canvas {
   width: min(92vw, 560px);
   aspect-ratio: 1;
@@ -221,5 +214,4 @@ body {
   .mode-btn { min-width: 46%; }
   .cam-preview { width: 120px; }
   #rx-view .cam-preview { width: min(92vw, 520px); }
-  .cal input[type="range"] { width: 84px; }
 }

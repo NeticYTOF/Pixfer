@@ -281,11 +281,35 @@ export function makeEmitter(canvas) {
   };
 }
 
-// Keep a canvas pixel size matched to its own rendered (CSS) box, so the
-// grid uses the full display area without letterboxing.
+// Keep the screen awake while a transfer runs — phones otherwise dim or
+// lock mid-loop and the transfer stalls silently. Returns a release
+// function; safe to call anywhere (no-ops when unsupported).
+export async function keepScreenAwake() {
+  try {
+    if (typeof navigator !== "undefined" && "wakeLock" in navigator) {
+      const lock = await navigator.wakeLock.request("screen");
+      return () => {
+        try {
+          lock.release();
+        } catch (e) {
+          /* already released */
+        }
+      };
+    }
+  } catch (e) {
+    /* unsupported or the tab is hidden */
+  }
+  return () => {};
+}
+
+// Keep a canvas pixel size matched to its rendered (CSS) box, sharpened
+// by the device pixel ratio so QR modules stay crisp on hi-DPI screens.
+// The QR painter derives its module pitch from the pixel size, so a
+// sharper canvas means sharper module edges for the peer's camera.
 export function fitCanvas(canvas) {
-  const w = canvas.clientWidth;
-  const h = canvas.clientHeight;
+  const dpr = typeof window === "undefined" ? 1 : Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+  const w = Math.max(1, Math.round((canvas.clientWidth || 1) * dpr));
+  const h = Math.max(1, Math.round((canvas.clientHeight || 1) * dpr));
   if (canvas.width !== w || canvas.height !== h) {
     canvas.width = w;
     canvas.height = h;
