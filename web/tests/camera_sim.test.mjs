@@ -26,8 +26,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as core from "../js/core.js";
-import { qrEncode, colorEncode, colorCapacity, COLOR_HUES } from "../js/qr.js";
-import { qrDecodeAllFromPixels } from "../js/qrdecode.js";
+import { qrEncode } from "../js/qr.js";
+import { qrDecodeFromPixels } from "../js/qrdecode.js";
 import { QR_DARK_COLORS, QR_QUIET_MODULES, FLASH_PHASE_MS } from "../js/light.js";
 import { PING_DWELL_MS, CHUNK_DWELL_MS } from "../js/tx.js";
 
@@ -83,8 +83,6 @@ function makeMotion(kind) {
 
 // The sharp screen image at a camera pixel: inverse-rotate into the QR
 // box's module grid, return [r,g,b]. `inverted` renders the flash phase.
-// Color frames carry 2 bits per data module: value 0 = light, 1 = black,
-// 2..4 = COLOR_HUES[value-1]. Legacy frames use the decorative palette.
 function makeScreenSampler(qr, { boxPx, cx, cy, rot, colorRot }) {
   const n = qr.size;
   const units = n + 2 * QR_QUIET_MODULES;
@@ -93,27 +91,16 @@ function makeScreenSampler(qr, { boxPx, cx, cy, rot, colorRot }) {
   const sin = Math.sin(rot);
   const k = QR_DARK_COLORS.length;
   const background = [235, 235, 235]; // the page around the box
-  const colorMode = !!qr.colorMode;
 
   return (px, py, inverted) => {
     const dx = px - cx;
     const dy = py - cy;
     const bx = cos * dx + sin * dy;
     const by = -sin * dx + cos * dy;
-    // module grid measured from the box's left/top edge
     const uc = Math.floor((bx + boxPx / 2) / mp) - QR_QUIET_MODULES;
     const vc = Math.floor((by + boxPx / 2) / mp) - QR_QUIET_MODULES;
     if (uc < 0 || vc < 0 || uc >= n || vc >= n) return background;
-    const val = qr.data[vc * n + uc];
-    if (colorMode) {
-      if (!val) return inverted ? [0, 0, 0] : [255, 255, 255];
-      const h = val === 1 ? [0, 0, 0] : COLOR_HUES[val - 1];
-      if (inverted) {
-        return [255 - h[0], 255 - h[1], 255 - h[2]];
-      }
-      return h;
-    }
-    const dark = val === 1;
+    const dark = qr.data[vc * n + uc] === 1;
     if (inverted ? !dark : dark) {
       if (inverted) return [255, 255, 255];
       const col = QR_DARK_COLORS[(vc * 7 + uc * 11 + colorRot) % k];
@@ -214,7 +201,7 @@ function runScenario(name, opts, seconds = 2) {
   const rng = makeRng(opts.seed || 12345);
   const frame = opts.frame ||
     core.newFrame("Chunk", 4242, 7, 12, new Uint8Array(opts.payloadLen || core.RS_K).fill(0x37));
-  const qr = opts.colorVersion ? colorEncode(frame, opts.colorVersion) : qrEncode(frame);
+  const qr = qrEncode(frame);
   const motion = makeMotion(opts.motion || "static");
   const fps = opts.fps || FPS;
   const frameMs = 1000 / fps;
@@ -252,22 +239,22 @@ function runScenario(name, opts, seconds = 2) {
     });
     const simOpts = { ...opts, blurSigma: blur };
 
-    // qrDecodeVideo behavior: warm/detection multi path per scale
+    // DS=4 first (qrDecodeVideo fast path)
     const buf4 = renderDsBuffer(sampler, simOpts, rng, exposureBlend, 4);
     let d0 = process.hrtime.bigint();
-    let res = qrDecodeAllFromPixels(buf4.data, buf4.w, buf4.h);
+    let dec = qrDecodeFromPixels(buf4.data, buf4.w, buf4.h);
     let d1 = process.hrtime.bigint();
     let frameDecodeMs = Number(d1 - d0) / 1e6;
-    if (res.frames.length > 0) {
+    if (dec.ok) {
       ds4++;
     } else {
       // DS=2 retry on failure (qrDecodeVideo retry)
       const buf2 = renderDsBuffer(sampler, simOpts, rng, exposureBlend, 2);
       d0 = process.hrtime.bigint();
-      res = qrDecodeAllFromPixels(buf2.data, buf2.w, buf2.h);
+      dec = qrDecodeFromPixels(buf2.data, buf2.w, buf2.h);
       d1 = process.hrtime.bigint();
       frameDecodeMs += Number(d1 - d0) / 1e6;
-      if (res.frames.length > 0) {
+      if (dec.ok) {
         ds2Rescues++;
       } else if (opts.tryCrop) {
         // centered native-resolution crop (qrDecodeVideo's crop pass for
@@ -278,19 +265,19 @@ function runScenario(name, opts, seconds = 2) {
           (CAM_W - side) / 2, (CAM_H - side) / 2, side, side
         );
         d0 = process.hrtime.bigint();
-        res = qrDecodeAllFromPixels(bufC.data, bufC.w, bufC.h);
+        dec = qrDecodeFromPixels(bufC.data, bufC.w, bufC.h);
         d1 = process.hrtime.bigint();
         frameDecodeMs += Number(d1 - d0) / 1e6;
-        if (res.frames.length > 0) cropRescues++;
+        if (dec.ok) cropRescues++;
       }
     }
     decodeMs += frameDecodeMs;
     if (frameDecodeMs > maxDecodeMs) maxDecodeMs = frameDecodeMs;
-    if (res.frames.length > 0) {
-      decodes += res.frames.length;
-      for (const fr of res.frames) if (fr.sessionId === 4242) invertedCatches += 0;
+    if (dec.ok) {
+      decodes++;
+      if (dec.inverted) invertedCatches++;
     } else {
-      errors["NoDecode"] = (errors["NoDecode"] || 0) + 1;
+      errors[dec.error] = (errors[dec.error] || 0) + 1;
     }
   }
 
@@ -423,26 +410,6 @@ test("camera sim: big 643 B frames (v20) survive a shaky camera", () => {
   assert.ok(r.rate >= 0.3, `rate ${(r.rate * 100).toFixed(0)}% < 30%`);
 });
 
-test("camera sim: color v11 frame (2 bits/module) survives a typical camera", () => {
-  // THE throughput frame: 646 B in a v11 code via hue-packed modules.
-  // This is the honest hue-classification measurement — noise, white-balance
-  // shift, blur and shake all attack the 4-class separation, and the
-  // RS(255,223) budget absorbs what slips through.
-  const r = runScenario("color-v11", {
-    colorVersion: 11, boxPx: 560, motion: "shake", blurSigma: 1.1, noiseSigma: 8, wb: [1.05, 1, 0.97],
-    brightness: 1.0, exposureMs: 15, jitterPx: 4, seed: 1300,
-  }, 1.2);
-  assert.ok(r.rate >= 0.4, `rate ${(r.rate * 100).toFixed(0)}% < 40%`);
-});
-
-test("camera sim: color v20 frame (1761 B/dwell) at typical distance", () => {
-  const r = runScenario("color-v20", {
-    colorVersion: 20, boxPx: 560, motion: "shake", blurSigma: 1.1, noiseSigma: 8, wb: [1.05, 1, 0.97],
-    brightness: 1.0, exposureMs: 15, jitterPx: 4, seed: 1400,
-  }, 1.2);
-  assert.ok(r.rate >= 0.3, `rate ${(r.rate * 100).toFixed(0)}% < 30%`);
-});
-
 test("camera sim: sender catches the receiver's Done reply", () => {
   // The reply channel: the receiver flashes a small v2 Done QR in its
   // ~320px corner box — the sender's camera must catch it under the same
@@ -544,24 +511,23 @@ test("camera sim: loop transfer recaptures lost frames (shake + off-screen)", ()
     });
     const simOpts = { ...opts, blurSigma: blur };
 
-    // qrDecodeVideo behavior: DS=4 first, DS=2 retry (multi path)
+    // qrDecodeVideo behavior: DS=4 first, DS=2 retry
     const buf4 = renderDsBuffer(sampler, simOpts, rng, exposureBlend, 4);
-    let res = qrDecodeAllFromPixels(buf4.data, buf4.w, buf4.h);
-    if (res.frames.length === 0) {
+    let dec = qrDecodeFromPixels(buf4.data, buf4.w, buf4.h);
+    if (!dec.ok) {
       const buf2 = renderDsBuffer(sampler, simOpts, rng, exposureBlend, 2);
-      res = qrDecodeAllFromPixels(buf2.data, buf2.w, buf2.h);
+      dec = qrDecodeFromPixels(buf2.data, buf2.w, buf2.h);
     }
-    for (const fr of res.frames) {
-      if (fr.kind !== "Chunk" || fr.sessionId !== sessionId) continue;
+    if (dec.ok && dec.frame.kind === "Chunk" && dec.frame.sessionId === sessionId) {
       // the frame NUMBER inside the QR tells us exactly which chunk this is
-      if (fr.chunkIdx !== cur.content) {
+      if (dec.frame.chunkIdx !== cur.content) {
         wrongIndex++;
-      } else if (!got[fr.chunkIdx]) {
-        got[fr.chunkIdx] = fr.payload;
+      } else if (!got[dec.frame.chunkIdx]) {
+        got[dec.frame.chunkIdx] = dec.frame.payload;
         caughtByIndex++;
       }
-      const expect = payloads[fr.chunkIdx];
-      if (!expect || !fr.payload.every((v, i) => v === expect[i])) wrongIndex++;
+      const expect = payloads[dec.frame.chunkIdx];
+      if (!expect || !dec.frame.payload.every((v, i) => v === expect[i])) wrongIndex++;
     }
 
     const missingCount = got.filter((x) => !x).length;

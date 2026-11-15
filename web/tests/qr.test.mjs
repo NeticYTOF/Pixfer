@@ -5,8 +5,8 @@
 // Run: node tests/qr.test.mjs (from web/)
 
 import * as core from "../js/core.js";
-import { qrEncode, qrCapacityBytes, buildReserved, colorEncode, colorCapacity, COLOR_HUES } from "../js/qr.js";
-import { qrDecodeFromPixels, qrDecodeAllFromPixels } from "../js/qrdecode.js";
+import { qrEncode, qrCapacityBytes, buildReserved } from "../js/qr.js";
+import { qrDecodeFromPixels } from "../js/qrdecode.js";
 import { QR_DARK_COLORS } from "../js/light.js";
 
 let pass = 0;
@@ -196,140 +196,6 @@ function qrPixels(qr, pxPerModule = 8) {
       `big frame ${pl} B payload is byte-exact`,
       dec.ok && dec.frame.payload.length === pl && dec.frame.payload.every((v, i) => v === payload[i])
     );
-  }
-}
-
-// 8) Color frames: 2 bits per data module. Structure stays black/white
-// (detection unchanged); data cells carry one of four dark hues; the
-// payload rides its own RS(255,223) blocks over the whole data region.
-{
-  const presets = [
-    [11, 646],
-    [20, 1761],
-    [25, 2653],
-  ];
-  for (const [ver, pl] of presets) {
-    const cap = colorCapacity(ver);
-    check(`color v${ver} capacity == ${pl} B`, cap.payloadBytes === pl, JSON.stringify(cap));
-    const payload = new Uint8Array(pl);
-    for (let i = 0; i < pl; i++) payload[i] = (i * 41 + 3) & 0xff;
-    const frame = core.newFrame("Chunk", 4711, 3, 10, payload);
-    const qr = colorEncode(frame, ver);
-    check(`color v${ver} encodes`, !!qr);
-    check(`color v${ver} is flagged colorMode`, qr.colorMode === true);
-    // render: 0 light, 1..3 hue, 4 black — same semantics as light.js
-    const px = 6;
-    const w = qr.size * px;
-    const h = w;
-    const data = new Uint8Array(w * h * 4);
-    for (let r = 0; r < qr.size; r++) {
-      for (let c = 0; c < qr.size; c++) {
-        const val = qr.data[r * qr.size + c];
-        let col;
-        if (val === 0) col = [255, 255, 255];
-        else if (val === 1) col = [0, 0, 0];
-        else col = COLOR_HUES[val - 1];
-        for (let dy = 0; dy < px; dy++) {
-          for (let dx = 0; dx < px; dx++) {
-            const i = ((r * px + dy) * w + c * px + dx) * 4;
-            data[i] = col[0];
-            data[i + 1] = col[1];
-            data[i + 2] = col[2];
-            data[i + 3] = 255;
-          }
-        }
-      }
-    }
-    const dec = qrDecodeFromPixels(data, w, h);
-    check(`color v${ver} decodes (normal polarity)`, dec.ok, dec.error);
-    check(
-      `color v${ver} payload is byte-exact`,
-      dec.ok && dec.frame.payload.length === pl && dec.frame.payload.every((v, i) => v === payload[i])
-    );
-    check(
-      `color v${ver} frame fields recovered`,
-      dec.ok && dec.frame.kind === "Chunk" && dec.frame.sessionId === 4711 && dec.frame.chunkIdx === 3
-    );
-  }
-
-  // inverted polarity: complement every channel — the decoder must detect
-  // the inversion from the format word and complement again before hue
-  // classification
-  {
-    const payload = new Uint8Array(646);
-    for (let i = 0; i < 646; i++) payload[i] = (i * 37 + 9) & 0xff;
-    const frame = core.newFrame("Chunk", 999, 1, 4, payload);
-    const qr = colorEncode(frame, 11);
-    const px = 6;
-    const w = qr.size * px;
-    const data = new Uint8Array(w * w * 4);
-    for (let r = 0; r < qr.size; r++) {
-      for (let c = 0; c < qr.size; c++) {
-        const val = qr.data[r * qr.size + c];
-        let col;
-        if (val === 0) col = [0, 0, 0]; // light inverts to black background
-        else if (val === 1) col = [255, 255, 255];
-        else {
-          const hh = COLOR_HUES[val - 1];
-          col = [255 - hh[0], 255 - hh[1], 255 - hh[2]];
-        }
-        for (let dy = 0; dy < px; dy++) {
-          for (let dx = 0; dx < px; dx++) {
-            const i = ((r * px + dy) * w + c * px + dx) * 4;
-            data[i] = col[0];
-            data[i + 1] = col[1];
-            data[i + 2] = col[2];
-            data[i + 3] = 255;
-          }
-        }
-      }
-    }
-    const dec = qrDecodeFromPixels(data, w, w);
-    check("color frame decodes in inverted polarity", dec.ok, dec.error);
-    check("color inverted payload is byte-exact",
-      dec.ok && dec.frame.payload.every((v, i) => v === payload[i]));
-  }
-
-  // multi-QR: two color codes side by side decode in ONE capture
-  {
-    const mk = (idx, plen) => {
-      const payload = new Uint8Array(plen);
-      for (let i = 0; i < plen; i++) payload[i] = (i * 53 + idx * 31) & 0xff;
-      return core.newFrame("Chunk", 2024, idx, 3, payload);
-    };
-    const qa = colorEncode(mk(0, 646), 11);
-    const qb = colorEncode(mk(1, 646), 11);
-    const px = 6;
-    const gap = 12; // white gap between the codes
-    const cell = qa.size * px;
-    const w = cell * 2 + gap * px * 2;
-    const h = cell + gap * px * 2;
-    const data = new Uint8Array(w * h * 4).fill(255);
-    for (let i = 3; i < data.length; i += 4) data[i] = 255;
-    const paint = (qr, x0, y0) => {
-      for (let r = 0; r < qr.size; r++) {
-        for (let c = 0; c < qr.size; c++) {
-          const val = qr.data[r * qr.size + c];
-          if (val === 0) continue;
-          const col = val === 1 ? [0, 0, 0] : COLOR_HUES[val - 1];
-          for (let dy = 0; dy < px; dy++) {
-            for (let dx = 0; dx < px; dx++) {
-              const i = ((y0 + r * px + dy) * w + x0 + c * px + dx) * 4;
-              data[i] = col[0];
-              data[i + 1] = col[1];
-              data[i + 2] = col[2];
-              data[i + 3] = 255;
-            }
-          }
-        }
-      }
-    };
-    paint(qa, gap * px, gap * px);
-    paint(qb, gap * px + cell + gap * px, gap * px);
-    const res = qrDecodeAllFromPixels(data, w, h);
-    check("multi-QR: both color codes decode in one capture", res.frames.length >= 2, `got ${res.frames.length}`);
-    const idxs = res.frames.map((f) => f.chunkIdx).sort();
-    check("multi-QR: both chunk indices recovered", idxs[0] === 0 && idxs[1] === 1, JSON.stringify(idxs));
   }
 }
 

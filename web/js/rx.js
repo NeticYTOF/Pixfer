@@ -14,7 +14,7 @@
 import * as core from "./core.js";
 import { openCamera, makeEmitter, fitCanvas, keepScreenAwake } from "./light.js";
 import { qrEncode } from "./qr.js";
-import { qrDecodeVideoAll } from "./qrdecode.js";
+import { qrDecodeVideo } from "./qrdecode.js";
 
 const PONG_DWELL_MS = 400;
 const DONE_FLASH_MS = 30000; // stop flashing Done after this; the sender has seen it or is gone
@@ -102,18 +102,20 @@ export function mountRx(root, fflate, onBack) {
       frameTick++;
       if (frameTick % decodeStride !== 0) return;
       const t0 = performance.now();
-      const res = qrDecodeVideoAll(v);
+      const dec = qrDecodeVideo(v);
       const ms = performance.now() - t0;
       decodeStride = ms > 66 ? 3 : ms > 33 ? 2 : 1;
-      if (res.frames.length > 0) {
+      if (dec.ok) {
         failStreak = 0;
-        for (const fr of res.frames) route(fr);
+        route(dec.frame);
       } else {
         failStreak++;
         if (!session && failStreak === 30) {
           // ~1 s without a decode: give the user a specific, actionable hint
           statusEl.textContent =
-            "I can't see a readable code — hold steadier, get closer, or tap lock exposure";
+            dec.error === "FindersNotFound"
+              ? "no QR in view — move closer and fill the square"
+              : "I can see a code but can't read it — hold steadier, get closer, or tap lock exposure";
         }
       }
     })

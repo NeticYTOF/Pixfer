@@ -24,9 +24,6 @@ import {
   gfExp,
   gfMul,
   gfDiv,
-  dataCellOrder,
-  colorCapacity,
-  COLOR_HUES,
 } from "./qr.js";
 
 const DS = 4; // downscale factor for detection
@@ -110,9 +107,9 @@ function squareBlobs(comps) {
   return squares;
 }
 
-// All square-blob finder candidates in the frame, biggest first. Shared
-// by the single-code path and the multi-QR grid path.
-function finderCandidates(data, w, h) {
+export function detectFinders(data, w, h) {
+  // Finder rings first as dark blobs (normal phase: colored/black rings on
+  // white); retry with a white mask for the inverted flash phase.
   let squares = squareBlobs(components(blackMask(data, w, h), w, h));
   if (squares.length < 2) {
     // Inverted flash phase: the QR is white-on-black, so the finders are
@@ -124,17 +121,15 @@ function finderCandidates(data, w, h) {
     }
     squares = squareBlobs(components(white, w, h));
   }
-  return squares;
-}
+  if (squares.length < 2) return { found: false, tl: null, tr: null, bl: null, estimated: false };
 
-// The best right-isosceles corner triple among the candidate blobs.
-// (The pair pass places the estimated third finder at the exact
-// perpendicular spot, so all three centers exist either way.)
-function bestTripleFrom(squares) {
-  if (!squares || squares.length < 3) return null;
   const size = (c) => (c.w + c.h) / 2;
   const sizeFits = (a, b) => Math.abs(size(a) - size(b)) <= 0.15 * Math.max(size(a), size(b));
 
+  // Triple pass: pick the three same-sized blobs forming the TL+TR+BL
+  // right-isosceles corner, scoring by geometric error (minimal wins). A
+  // data blob can mimic one ring, but three blobs almost never line up as
+  // a tight corner — so error, not blob size, picks the finders.
   let best = null;
   let bestErr = Infinity;
   let bestSize = 0;
@@ -168,19 +163,10 @@ function bestTripleFrom(squares) {
       }
     }
   }
-  return best;
-}
-
-export function detectFinders(data, w, h) {
-  const squares = finderCandidates(data, w, h);
-  const best = bestTripleFrom(squares);
   if (best) return { found: true, tl: best.tl, tr: best.tr, bl: best.bl, estimated: false };
-  if (squares.length < 2) return { found: false, tl: null, tr: null, bl: null, estimated: false };
 
   // Pair pass (partial view): two same-sized finders + a square-geometry
   // estimate of the third.
-  const size = (c) => (c.w + c.h) / 2;
-  const sizeFits = (a, b) => Math.abs(size(a) - size(b)) <= 0.15 * Math.max(size(a), size(b));
   const sorted = squares.slice().sort((x, y) => (x.cx + x.cy) - (y.cx + y.cy));
   const a = sorted[0];
   for (const b of sorted.slice(1)) {
@@ -268,35 +254,29 @@ function readFormatWord(mods, n, copy) {
   return word;
 }
 
-// Match received format words against every valid format word the
-// protocol emits: EC level M (legacy QR frames, ecBits 00) and the Q
-// position (ecBits 11) which tags COLOR frames — 8 masks each. The
-// BCH(15,5) format code has minimum distance 7, so a match within 3 bit
-// errors is unambiguous — a noisy capture still resolves the mask AND
-// the frame format.
+// Match received format words against every valid EC-level-M format word
+// (bch15 already applies the 0x5412 transmit mask). The BCH(15,5) format
+// code has minimum distance 7, so a match within 3 bit errors is
+// unambiguous — a noisy capture still resolves the mask.
 function bestFormatMask(words) {
   let bestMask = -1;
-  let bestColor = false;
   let bestDist = 4; // tolerance is 3 bit errors
-  for (const ecBits of [0, 3]) {
-    for (let mask = 0; mask < 8; mask++) {
-      const cand = bch15((ecBits << 3) | mask);
-      for (const word of words) {
-        let dist = 0;
-        let x = (word ^ cand) & 0x7fff;
-        while (x) {
-          x &= x - 1;
-          dist++;
-        }
-        if (dist < bestDist) {
-          bestDist = dist;
-          bestMask = mask;
-          bestColor = ecBits === 3;
-        }
+  for (let mask = 0; mask < 8; mask++) {
+    const cand = bch15(mask); // EC level M = 00 -> data5 == mask
+    for (const word of words) {
+      let dist = 0;
+      let x = (word ^ cand) & 0x7fff;
+      while (x) {
+        x &= x - 1;
+        dist++;
+      }
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestMask = mask;
       }
     }
   }
-  return bestMask < 0 ? null : { mask: bestMask, color: bestColor };
+  return bestMask;
 }
 
 // Read data bits in the standard zigzag order, skipping reserved cells.
@@ -450,73 +430,6 @@ function parseFrame(bytes) {
   return { kind, sessionId, chunkIdx, totalChunks, payload: new Uint8Array(payload) };
 }
 
-// ---------- color frame decode: 2 bits per data module ----------
-
-// Nearest of the four dark hues in RGB space. All four are luminance-dark
-// and well separated, so blur/WB/noise would have to darken a hue below
-// ~40% brightness before it could confuse with another.
-function nearestHue(r, g, b) {
-  let best = 0;
-  let bestD = Infinity;
-  for (let i = 0; i < COLOR_HUES.length; i++) {
-    const h = COLOR_HUES[i];
-    const d = (r - h[0]) * (r - h[0]) + (g - h[1]) * (g - h[1]) + (b - h[2]) * (b - h[2]);
-    if (d < bestD) {
-      bestD = d;
-      best = i;
-    }
-  }
-  return best;
-}
-
-// Extract a color frame: sample every data cell's center color (the
-// inverted flash phase is compensated by channel-complementing the
-// sample), classify the hue, pack 2 bits per cell MSB-first into the
-// codeword stream, RS-decode each 255-block, and parse the PIXF frame
-// from the concatenated data parts.
-function decodeColor(data, w, h, g, version, inverted) {
-  const n = g.n;
-  const reserved = reservedFor(version);
-  const cells = dataCellOrder(n, reserved);
-  const cap = colorCapacity(version);
-  const stream = new Uint8Array(cap.blocks * 255);
-  const { o, ux, uy } = g;
-  for (let j = 0; j < cells.length; j++) {
-    const idx = cells[j];
-    const r = (idx / n) | 0;
-    const c = idx % n;
-    const px = Math.max(0, Math.min(w - 1, Math.round(o.x + (c + 0.5) * ux.x + (r + 0.5) * uy.x)));
-    const py = Math.max(0, Math.min(h - 1, Math.round(o.y + (c + 0.5) * ux.y + (r + 0.5) * uy.y)));
-    const p = (py * w + px) * 4;
-    let R = data[p];
-    let G = data[p + 1];
-    let B = data[p + 2];
-    if (inverted) {
-      R = 255 - R;
-      G = 255 - G;
-      B = 255 - B;
-    }
-    const v = nearestHue(R, G, B);
-    const byte = (j * 2) >> 3;
-    if (byte < stream.length) {
-      stream[byte] |= ((v >> 1) & 1) << (7 - ((j * 2) & 7));
-      stream[byte] |= (v & 1) << (7 - ((j * 2 + 1) & 7));
-    }
-  }
-  const parts = [];
-  for (let b = 0; b < cap.blocks; b++) {
-    const coded = stream.subarray(b * 255, b * 255 + 255);
-    const dec = qrRsDecode(coded, 32);
-    if (!dec.ok) return { ok: false, error: dec.error };
-    parts.push(dec.payload);
-  }
-  const fb = new Uint8Array(cap.blocks * 223);
-  for (let b = 0; b < parts.length; b++) fb.set(parts[b], b * 223);
-  const frame = parseFrame(fb);
-  if (!frame) return { ok: false, error: "HeaderBad" };
-  return { ok: true, frame };
-}
-
 // ---------- main decode ----------
 
 // Sample an N×N module grid with a sampler function.
@@ -530,19 +443,18 @@ function sampleGrid(n, sample) {
   return mods;
 }
 
-// Read the mask (and frame format) from the format bits, retrying on the
-// inverted phase when the normal polarity doesn't verify (flashed
-// white-on-black capture).
+// Read the mask from the format bits (best match over both copies),
+// retrying on the inverted phase when the normal polarity doesn't verify
+// (flashed white-on-black capture).
 function resolveMask(mods, n) {
-  let r = bestFormatMask([readFormatWord(mods, n, 0), readFormatWord(mods, n, 1)]);
+  let mask = bestFormatMask([readFormatWord(mods, n, 0), readFormatWord(mods, n, 1)]);
   let inverted = false;
-  if (!r) {
+  if (mask < 0) {
     for (let i = 0; i < mods.length; i++) mods[i] ^= 1;
     inverted = true;
-    r = bestFormatMask([readFormatWord(mods, n, 0), readFormatWord(mods, n, 1)]);
+    mask = bestFormatMask([readFormatWord(mods, n, 0), readFormatWord(mods, n, 1)]);
   }
-  if (!r) return { mask: -1, inverted, color: false };
-  return { mask: r.mask, inverted, color: r.color };
+  return { mask, inverted };
 }
 
 // Affine module-grid geometry from the three finder centers: module (r,c)
@@ -571,31 +483,16 @@ function geometryForVersion(f, version) {
 // it just falls through to the full path.
 const warmBySize = new Map();
 
-// Attempt a full decode at one candidate version from a finder triple
-// (or a warm geometry). Handles both frame formats: legacy QR codewords
-// and color frames (hue-packed RS blocks).
-function attemptVersion(data, w, h, g, version, storeWarm) {
-  const sample = makeSampler(data, w, h, g);
-  const mods = sampleGrid(g.n, sample);
-  const { mask, inverted, color } = resolveMask(mods, g.n);
-  if (mask < 0) return { ok: false, error: "FormatBad" };
-  let res;
-  if (color) {
-    res = decodeColor(data, w, h, g, version, inverted);
-  } else {
-    res = decodeVersion(mods, g.n, version, mask);
-  }
-  if (res.ok && storeWarm) {
-    warmBySize.set(w * h, g);
-  }
-  return res.ok ? { ok: true, frame: res.frame, inverted } : res;
-}
-
 export function qrDecodeFromPixels(data, w, h) {
   const warm = warmBySize.get(w * h);
   if (warm) {
-    const res = attemptVersion(data, w, h, warm, warm.version, false);
-    if (res.ok) return res;
+    const warmSample = makeSampler(data, w, h, warm);
+    const warmMods = sampleGrid(warm.n, warmSample);
+    const { mask: wm, inverted: wi } = resolveMask(warmMods, warm.n);
+    if (wm >= 0) {
+      const res = decodeVersion(warmMods, warm.n, warm.version, wm);
+      if (res.ok) return { ok: true, frame: res.frame, inverted: wi };
+    }
   }
 
   const f = detectFinders(data, w, h);
@@ -608,11 +505,21 @@ export function qrDecodeFromPixels(data, w, h) {
   const sample0 = makeSampler(data, w, h, g0);
   const vRead1 = readVersionWord(sample0, 17 + 4 * 13, 0);
   const vRead2 = vRead1 || readVersionWord(sample0, 17 + 4 * 13, 1);
+  const versionInfoOk = vRead2 > 0;
 
-  if (vRead2 > 0) {
-    const g = geometryForVersion(f, vRead2);
-    const res = attemptVersion(data, w, h, g, vRead2, true);
-    if (res.ok) return res;
+  if (versionInfoOk) {
+    const version = vRead2;
+    const g = geometryForVersion(f, version);
+    const sample = makeSampler(data, w, h, g);
+    const mods = sampleGrid(g.n, sample);
+    const { mask, inverted } = resolveMask(mods, g.n);
+    if (mask >= 0) {
+      const res = decodeVersion(mods, g.n, version, mask);
+      if (res.ok) {
+        warmBySize.set(w * h, g);
+        return { ok: true, frame: res.frame, inverted };
+      }
+    }
     // Fall through to the fallback list: the sampled "version word" can
     // pass the 18-bit BCH check by chance on codes that carry no version
     // info (v2-v6), so it must never be trusted over a full decode.
@@ -622,51 +529,17 @@ export function qrDecodeFromPixels(data, w, h) {
   // succeeds.
   for (const v of FALLBACK_VERSIONS) {
     const g = geometryForVersion(f, v);
-    const res = attemptVersion(data, w, h, g, v, true);
-    if (res.ok) return res;
+    const sample = makeSampler(data, w, h, g);
+    const mods = sampleGrid(g.n, sample);
+    const { mask, inverted } = resolveMask(mods, g.n);
+    if (mask < 0) continue;
+    const res = decodeVersion(mods, g.n, v, mask);
+    if (res.ok) {
+      warmBySize.set(w * h, g);
+      return { ok: true, frame: res.frame, inverted };
+    }
   }
   return { ok: false, error: "VersionFallbackFailed" };
-}
-
-// Decode EVERY code in the frame (multi-QR grids). Warm geometries decode
-// first (grid positions persist across frames), then full detection finds
-// the remaining triples greedily — each accepted triple's blobs leave the
-// pool, and bogus cross-code triples die on RS/CRC. Duplicates (warm +
-// detection hitting the same code) are harmless: the receiver stores
-// chunks by index.
-export function qrDecodeAllFromPixels(data, w, h) {
-  const frames = [];
-  const warm = warmBySize.get(w * h);
-  if (warm) {
-    const res = attemptVersion(data, w, h, warm, warm.version, false);
-    if (res.ok) frames.push(res.frame);
-  }
-
-  let squares = finderCandidates(data, w, h);
-  for (let guard = 0; guard < 8 && frames.length < 6; guard++) {
-    const triple = bestTripleFrom(squares);
-    if (!triple) break;
-    // consume this triple's blobs whether or not it decodes
-    const used = new Set([triple.tl, triple.tr, triple.bl]);
-    squares = squares.filter((s) => !used.has(s));
-    const f = { found: true, tl: triple.tl, tr: triple.tr, bl: triple.bl, estimated: false };
-    const g0 = geometryForVersion(f, 13);
-    const sample0 = makeSampler(data, w, h, g0);
-    const vRead1 = readVersionWord(sample0, g0.n, 0);
-    const vRead2 = vRead1 || readVersionWord(sample0, g0.n, 1);
-    let res = null;
-    if (vRead2 > 0) {
-      res = attemptVersion(data, w, h, geometryForVersion(f, vRead2), vRead2, true);
-    }
-    if (!res || !res.ok) {
-      for (const v of FALLBACK_VERSIONS) {
-        res = attemptVersion(data, w, h, geometryForVersion(f, v), v, true);
-        if (res.ok) break;
-      }
-    }
-    if (res && res.ok) frames.push(res.frame);
-  }
-  return { frames };
 }
 
 // Reserved-module maps are pure per version — cache them so the hot
@@ -810,51 +683,7 @@ function decodeAtCenterCrop(video, vw, vh) {
   ctx.imageSmoothingEnabled = true; // 1:1 crop - smoothing irrelevant, just not nearest
   ctx.drawImage(video, x0, y0, side, side, 0, 0, side, side);
   const d = ctx.getImageData(0, 0, side, side).data;
-  return qrDecodeAllFromPixels(d, side, side);
-}
-
-// Decode EVERY code in the live video frame (multi-QR grids return
-// several frames per capture). Same anti-aliased scale ladder as the
-// single-code path.
-export function qrDecodeVideoAll(video) {
-  const vw = video.videoWidth || 640;
-  const vh = video.videoHeight || 480;
-  let out = { frames: [] };
-  let ranFullRes = false;
-  for (const ds of [4, 2, 1]) {
-    if ((vw / ds) * (vh / ds) > 1200000) continue;
-    if (ds === 1) ranFullRes = true;
-    out = decodeAtScaleAll(video, vw, vh, ds);
-    if (out.frames.length) return out;
-  }
-  if (!ranFullRes) {
-    out = decodeAtCenterCrop(video, vw, vh);
-    if (out.frames.length) return out;
-  }
-  return out;
-}
-
-function decodeAtScaleAll(video, vw, vh, ds) {
-  const w = Math.max(2, (vw / ds) | 0);
-  const h = Math.max(2, (vh / ds) | 0);
-  let src = video;
-  let srcW = vw;
-  let srcH = vh;
-  let stage = 0;
-  while (srcW > w * 2 && srcH > h * 2) {
-    const halfW = Math.max(w, (srcW / 2) | 0);
-    const halfH = Math.max(h, (srcH / 2) | 0);
-    const cv = getCv(`all:${ds}:${stage}`, halfW, halfH);
-    drawStage(cv, src, halfW, halfH);
-    src = cv;
-    srcW = halfW;
-    srcH = halfH;
-    stage++;
-  }
-  const out = getCv(`all:${ds}:out`, w, h);
-  const ctx = drawStage(out, src, w, h);
-  const d = ctx.getImageData(0, 0, w, h).data;
-  return qrDecodeAllFromPixels(d, w, h);
+  return qrDecodeFromPixels(d, side, side);
 }
 
 const downscaleCache = new Map();
