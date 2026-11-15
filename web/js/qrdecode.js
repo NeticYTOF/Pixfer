@@ -465,11 +465,30 @@ function geometryForVersion(f, version) {
     x: tl.cx - 3.5 * (ux.x + uy.x),
     y: tl.cy - 3.5 * (ux.y + uy.y),
   };
-  return { n, o, ux, uy };
+  return { version, n, o, ux, uy };
 }
 
 // Pure entry: decode from a downscale pixel buffer (w x h, RGBA).
+// Warm start: between 30 fps frames a steady phone barely moves, so try
+// the last successful affine grid BEFORE the flood-fill finder detection
+// (the most expensive step). Keyed by buffer size — the DS=4 and DS=2
+// buffers have different coordinate scales. Any stale hit fails the
+// format/RS/CRC checks, so a wrong warm start can never yield a frame;
+// it just falls through to the full path.
+const warmBySize = new Map();
+
 export function qrDecodeFromPixels(data, w, h) {
+  const warm = warmBySize.get(w * h);
+  if (warm) {
+    const warmSample = makeSampler(data, w, h, warm);
+    const warmMods = sampleGrid(warm.n, warmSample);
+    const { mask: wm, inverted: wi } = resolveMask(warmMods, warm.n);
+    if (wm >= 0) {
+      const res = decodeVersion(warmMods, warm.n, warm.version, wm);
+      if (res.ok) return { ok: true, frame: res.frame, inverted: wi };
+    }
+  }
+
   const f = detectFinders(data, w, h);
   if (!f.found) return { ok: false, error: "FindersNotFound" };
   const { tl, tr, bl } = f;
@@ -490,7 +509,10 @@ export function qrDecodeFromPixels(data, w, h) {
     const { mask, inverted } = resolveMask(mods, g.n);
     if (mask >= 0) {
       const res = decodeVersion(mods, g.n, version, mask);
-      if (res.ok) return { ok: true, frame: res.frame, inverted };
+      if (res.ok) {
+        warmBySize.set(w * h, g);
+        return { ok: true, frame: res.frame, inverted };
+      }
     }
     // Fall through to the fallback list: the sampled "version word" can
     // pass the 18-bit BCH check by chance on codes that carry no version
@@ -506,14 +528,29 @@ export function qrDecodeFromPixels(data, w, h) {
     const { mask, inverted } = resolveMask(mods, g.n);
     if (mask < 0) continue;
     const res = decodeVersion(mods, g.n, v, mask);
-    if (res.ok) return { ok: true, frame: res.frame, inverted };
+    if (res.ok) {
+      warmBySize.set(w * h, g);
+      return { ok: true, frame: res.frame, inverted };
+    }
   }
   return { ok: false, error: "VersionFallbackFailed" };
 }
 
+// Reserved-module maps are pure per version — cache them so the hot
+// fallback path stops rebuilding the same map every frame.
+const reservedByVer = new Map();
+function reservedFor(version) {
+  let r = reservedByVer.get(version);
+  if (!r) {
+    r = buildReserved(version);
+    reservedByVer.set(version, r);
+  }
+  return r;
+}
+
 // Decode with a specific version: unmask, zigzag read, RS correct, parse.
 function decodeVersion(mods, n, version, mask) {
-  const reserved = buildReserved(version);
+  const reserved = reservedFor(version);
   const maskFn = MASKS[mask];
   for (let r = 0; r < n; r++) {
     for (let c = 0; c < n; c++) {

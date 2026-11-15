@@ -91,9 +91,13 @@ export function sampleBlocks(video, opts = {}) {
   return blocks;
 }
 
-// Blink period for flashing frames: 50 ms per phase → a 10 Hz full blink
-// cycle. Slow enough for camera exposure to resolve each phase cleanly.
-const FLASH_PHASE_MS = 50;
+// Blink period for flashing frames. 100 ms per phase → 10 phase changes
+// per second (a 5 Hz full blink cycle — still clearly flashing to the
+// eye). Real phone cameras have rolling shutters and dim-light frame
+// integration of 30-70 ms; at 10 flips/sec most exposures fit inside a
+// single phase, so captures stay decodable instead of blending the two
+// phases into a smear.
+export const FLASH_PHASE_MS = 100;
 
 // Quiet-zone width (modules) and the dark-module palette for QR output.
 // Palette colors are luminance-dark (gray < 128) AND strongly saturated
@@ -283,21 +287,41 @@ export function makeEmitter(canvas) {
 
 // Keep the screen awake while a transfer runs — phones otherwise dim or
 // lock mid-loop and the transfer stalls silently. Returns a release
-// function; safe to call anywhere (no-ops when unsupported).
+// function; safe to call anywhere (no-ops when unsupported). The lock
+// auto-releases when the tab hides, so it is re-requested on return to
+// visibility until released.
 export async function keepScreenAwake() {
+  let lock = null;
+  let released = false;
   try {
     if (typeof navigator !== "undefined" && "wakeLock" in navigator) {
-      const lock = await navigator.wakeLock.request("screen");
-      return () => {
+      const request = async () => {
+        if (released) return;
         try {
-          lock.release();
+          lock = await navigator.wakeLock.request("screen");
+        } catch (e) {
+          /* unsupported or the tab is hidden */
+        }
+      };
+      await request();
+      if (typeof document !== "undefined") {
+        document.addEventListener("visibilitychange", request);
+      }
+      return () => {
+        released = true;
+        if (typeof document !== "undefined") {
+          document.removeEventListener("visibilitychange", request);
+        }
+        try {
+          if (lock) lock.release();
         } catch (e) {
           /* already released */
         }
+        lock = null;
       };
     }
   } catch (e) {
-    /* unsupported or the tab is hidden */
+    /* unsupported */
   }
   return () => {};
 }

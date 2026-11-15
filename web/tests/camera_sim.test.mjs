@@ -28,15 +28,13 @@ import assert from "node:assert/strict";
 import * as core from "../js/core.js";
 import { qrEncode } from "../js/qr.js";
 import { qrDecodeFromPixels } from "../js/qrdecode.js";
-import { QR_DARK_COLORS, QR_QUIET_MODULES } from "../js/light.js";
+import { QR_DARK_COLORS, QR_QUIET_MODULES, FLASH_PHASE_MS } from "../js/light.js";
+import { PING_DWELL_MS, CHUNK_DWELL_MS } from "../js/tx.js";
 
 const CAM_W = 1280;
 const CAM_H = 720;
 const FPS = 30;
 const FRAME_MS = 1000 / FPS;
-const FLASH_PHASE_MS = 50; // must match light.js FLASH_PHASE_MS
-const PING_DWELL_MS = 250; // must match tx.js
-const CHUNK_DWELL_MS = 300; // must match tx.js
 const PASS_MS = (chunks) => PING_DWELL_MS + chunks * CHUNK_DWELL_MS;
 
 // Deterministic PRNG (xorshift32) so runs are reproducible.
@@ -194,7 +192,7 @@ function contentChanges(a, b, nChunks) {
 
 function runScenario(name, opts, seconds = 2) {
   const rng = makeRng(opts.seed || 12345);
-  const frame = core.newFrame("Chunk", 4242, 7, 12, new Uint8Array(core.RS_K).fill(0x37));
+  const frame = opts.frame || core.newFrame("Chunk", 4242, 7, 12, new Uint8Array(core.RS_K).fill(0x37));
   const qr = qrEncode(frame);
   const motion = makeMotion(opts.motion || "static");
 
@@ -315,6 +313,18 @@ test("camera sim: hand shake — drift, tremor, rotation wobble", () => {
   // the affine grid tracks rotation; drift keeps the code in frame; the
   // loop protocol recovers whatever this drops
   assert.ok(r.rate >= 0.25, `rate ${(r.rate * 100).toFixed(0)}% < 25%`);
+});
+
+test("camera sim: sender catches the receiver's Done reply", () => {
+  // The reply channel: the receiver flashes a small v2 Done QR in its
+  // ~320px corner box — the sender's camera must catch it under the same
+  // shake. This is the ack path that ends the loop.
+  const r = runScenario("reply-catch", {
+    frame: core.newFrame("Done", 4242, 0, 12, null),
+    boxPx: 320, motion: "shake", blurSigma: 1.2, noiseSigma: 10, wb: [1.06, 1.0, 0.96],
+    brightness: 1.0, exposureMs: 15, jitterPx: 6, seed: 808,
+  }, 1);
+  assert.ok(r.rate >= 0.5, `rate ${(r.rate * 100).toFixed(0)}% < 50%`);
 });
 
 test("camera sim: decode stays fast enough for 30fps", () => {

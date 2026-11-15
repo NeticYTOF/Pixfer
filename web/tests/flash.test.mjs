@@ -4,7 +4,7 @@
 // Run: node tests/flash.test.mjs (from web/)
 
 import * as core from "../js/core.js";
-import { makeEmitter, QR_DARK_COLORS, QR_QUIET_MODULES } from "../js/light.js";
+import { makeEmitter, QR_DARK_COLORS, QR_QUIET_MODULES, FLASH_PHASE_MS } from "../js/light.js";
 import { qrEncode } from "../js/qr.js";
 
 let pass = 0;
@@ -150,7 +150,7 @@ function check(name, cond, detail) {
     puts[0].data[x * 4 + 2] === core.PALETTE[nv][2]);
 
   if (useFake) {
-    fakeNow = 50; // >= FLASH_PHASE_MS (50 ms) -> toggle to inverted phase
+    fakeNow = FLASH_PHASE_MS; // >= FLASH_PHASE_MS -> toggle to inverted phase
     runRaf();
   } else {
     await sleep(60);
@@ -225,7 +225,7 @@ function check(name, cond, detail) {
   const styles1 = new Set(mods1.map((m) => m.style));
   check("qr paint: dark modules are multicolored", styles1.size > 1, "styles: " + styles1.size);
 
-  fakeNow = 50; // >= FLASH_PHASE_MS -> inverted phase
+  fakeNow = FLASH_PHASE_MS; // >= FLASH_PHASE_MS -> inverted phase
   const phase2Start = rects.length;
   runRaf(); // tick: flips the phase and repaints inverted
   const p2 = rects.slice(phase2Start);

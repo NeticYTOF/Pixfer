@@ -48,10 +48,21 @@ export function mountRx(root, fflate, onBack) {
   let finished = false;
   let camHandle = null;
 
+  // Decode throttle: on slow devices a full decode (finder flood-fill +
+  // RS) can take longer than a frame period; decoding every camera frame
+  // then backs up the callback loop and effectively drops MORE frames.
+  // Sample the frame rate down instead — the loop protocol brings back
+  // anything this skips.
+  let decodeStride = 1;
+  let frameTick = 0;
   openCamera(video, (v) => {
       drawCam(v, camCanvas);
-      // Decode the sender's looping frames (actual QR, colored flash).
+      frameTick++;
+      if (frameTick % decodeStride !== 0) return;
+      const t0 = performance.now();
       const dec = qrDecodeVideo(v);
+      const ms = performance.now() - t0;
+      decodeStride = ms > 66 ? 3 : ms > 33 ? 2 : 1;
       if (dec.ok) route(dec.frame);
     })
     .then(async (h) => {

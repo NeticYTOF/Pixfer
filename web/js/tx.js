@@ -16,8 +16,12 @@ import { openCamera, makeEmitter, fitCanvas, keepScreenAwake } from "./light.js"
 import { qrEncode } from "./qr.js";
 import { qrDecodeVideo } from "./qrdecode.js";
 
-const PING_DWELL_MS = 250; // must be a multiple of the 50 ms flash phase
-const CHUNK_DWELL_MS = 300;
+// Per-frame flash times, multiples of the 100 ms flash phase. The ping
+// gets 2 phases, each chunk 3 phases (~9 camera frames at 30 fps) — the
+// real-device margin that keeps a pass from having to repeat. Exported
+// so the camera simulation stays in lockstep with the sender.
+export const PING_DWELL_MS = 200;
+export const CHUNK_DWELL_MS = 300;
 const MAX_PASSES = 40; // safety cap if the receiver never flashes Done
 
 export function mountTx(root, fflate, onBack) {
@@ -150,7 +154,10 @@ export function mountTx(root, fflate, onBack) {
     if (!plan.shouldZip) {
       setStatus((file.size / 1048576).toFixed(2) + " MB, est. " + plan.estSeconds.toFixed(1) + "s, sending as-is");
     }
-    metaEl.textContent = totalChunks + " frames";
+    metaEl.textContent =
+      totalChunks + " frames · ~" +
+      ((PING_DWELL_MS + totalChunks * CHUNK_DWELL_MS) / 1000).toFixed(1) +
+      "s per pass";
     progressFill.style.width = "0%";
 
     stopLoop();
