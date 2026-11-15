@@ -34,8 +34,12 @@ export function mountRx(root, fflate, onBack) {
   }
 
   const emitter = makeEmitter(emitCanvas);
-  // Idle screen: full-white grid (all blocks 7).
-  emitter.setBlocks(new Uint8Array(core.GRID_W * core.GRID_H).fill(7));
+  // Idle screen: dark (all blocks 0) — sleek on OLED, and never decodes
+  // as a QR (a single solid blob has fill ratio ~1 and is excluded by the
+  // finder filter).
+  const idleBlocks = () => new Uint8Array(core.GRID_W * core.GRID_H).fill(0);
+  const emitter = makeEmitter(emitCanvas);
+  emitter.setBlocks(idleBlocks());
   let pongTimer = null;
   let doneTimer = null;
   let releaseWake = null;
@@ -55,6 +59,8 @@ export function mountRx(root, fflate, onBack) {
   // anything this skips.
   let decodeStride = 1;
   let frameTick = 0;
+  let failStreak = 0;
+  let showedRes = false;
   openCamera(video, (v) => {
       drawCam(v, camCanvas);
       frameTick++;
@@ -63,7 +69,25 @@ export function mountRx(root, fflate, onBack) {
       const dec = qrDecodeVideo(v);
       const ms = performance.now() - t0;
       decodeStride = ms > 66 ? 3 : ms > 33 ? 2 : 1;
-      if (dec.ok) route(dec.frame);
+      if (dec.ok) {
+        failStreak = 0;
+        route(dec.frame);
+      } else {
+        failStreak++;
+        if (!session) {
+          if (!showedRes) {
+            showedRes = true;
+            statusEl.textContent =
+              "camera " + v.videoWidth + "×" + v.videoHeight + " — fill the square with the sender's QR";
+          } else if (failStreak === 45) {
+            // ~1.5 s without a decode: give the user a specific, actionable hint
+            statusEl.textContent =
+              dec.error === "FindersNotFound"
+                ? "no QR in view — move closer and fill the square"
+                : "I can see a code but can't read it — hold steadier, get closer, or tap lock exposure";
+          }
+        }
+      }
     })
     .then(async (h) => {
       camHandle = h;
@@ -90,7 +114,9 @@ export function mountRx(root, fflate, onBack) {
     const ch = canvas.height;
     const vw = v.videoWidth;
     const vh = v.videoHeight;
-    const scale = Math.min(cw / vw, ch / vh);
+    // cover-crop: fill the viewfinder and crop the overflow, like a
+    // camera app — the QR box guides framing instead of letterboxing
+    const scale = Math.max(cw / vw, ch / vh);
     const dw = vw * scale;
     const dh = vh * scale;
     ctx.imageSmoothingEnabled = false;
@@ -104,7 +130,7 @@ export function mountRx(root, fflate, onBack) {
     if (pongTimer) clearTimeout(pongTimer);
     pongTimer = setTimeout(() => {
       // back to the plain idle screen so the loop keeps decoding cleanly
-      emitter.setBlocks(new Uint8Array(core.GRID_W * core.GRID_H).fill(7));
+      emitter.setBlocks(idleBlocks());
     }, PONG_DWELL_MS);
   }
 
@@ -189,10 +215,11 @@ export function mountRx(root, fflate, onBack) {
     // Tell the sender to stop: keep flashing Done for a while so a
     // shake/blur cannot make it miss the signal.
     if (pongTimer) clearTimeout(pongTimer);
+    if (doneTimer) clearTimeout(doneTimer);
     emitter.setQr(qrEncode(core.newFrame("Done", sessionId, 0, totalChunks, null)));
     if (doneTimer) clearTimeout(doneTimer);
     doneTimer = setTimeout(() => {
-      emitter.setBlocks(new Uint8Array(core.GRID_W * core.GRID_H).fill(7));
+      emitter.setBlocks(idleBlocks());
       if (session) statusEl.textContent = "saved — you can go back, or wait for another transfer";
     }, DONE_FLASH_MS);
   }

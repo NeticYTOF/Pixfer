@@ -630,35 +630,39 @@ function decodeVersion(mods, n, version, mask) {
 
 // ---------- DOM wrapper ----------
 
-// Decode a QR code from a live video frame. The frame is downscaled by a
-// factor of 4 first (fast path, handles a code that fills a healthy part
-// of the camera view); if that fails — e.g. the phone is far away and the
-// code is small — the same frame is retried at a factor of 2, which keeps
-// twice the detail in the decode buffer. The retry only costs time on
-// frames that already failed.
+// Decode a QR code from a live video frame. Scales are tried from
+// fast/coarse to slow/fine: a code that fills a healthy part of the view
+// decodes at 1/4 scale, but at phone-to-phone distance the QR can cover
+// only ~20% of the frame — under 2 camera pixels per module — and only
+// the full-resolution pass resolves it. Buffers above ~1.2M pixels are
+// skipped (the flood-fill would outrun the frame budget); 1080p streams
+// still get the 1/4 and 1/2 passes, 720p streams get all three.
 export function qrDecodeVideo(video) {
   const vw = video.videoWidth || 640;
   const vh = video.videoHeight || 480;
-  const dec = decodeAtScale(video, vw, vh, 4);
-  if (dec.ok) return dec;
-  return decodeAtScale(video, vw, vh, 2);
+  let dec = { ok: false, error: "NoDecode" };
+  for (const ds of [4, 2, 1]) {
+    if ((vw / ds) * (vh / ds) > 1200000) continue;
+    dec = decodeAtScale(video, vw, vh, ds);
+    if (dec.ok) return dec;
+  }
+  return dec;
 }
 
+const scaleCanvases = new Map();
 function decodeAtScale(video, vw, vh, ds) {
   const w = Math.max(2, (vw / ds) | 0);
   const h = Math.max(2, (vh / ds) | 0);
-  let cv = decodeAtScale._cvs;
+  let cv = scaleCanvases.get(ds);
   if (!cv) {
-    cv = [document.createElement("canvas"), document.createElement("canvas")];
-    decodeAtScale._cvs = cv;
+    cv = document.createElement("canvas");
+    scaleCanvases.set(ds, cv);
   }
-  const idx = ds === 4 ? 0 : 1;
-  const c = cv[idx];
-  if (c.width !== w || c.height !== h) {
-    c.width = w;
-    c.height = h;
+  if (cv.width !== w || cv.height !== h) {
+    cv.width = w;
+    cv.height = h;
   }
-  const ctx = c.getContext("2d", { willReadFrequently: true });
+  const ctx = cv.getContext("2d", { willReadFrequently: true });
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(video, 0, 0, w, h);
   const d = ctx.getImageData(0, 0, w, h).data;

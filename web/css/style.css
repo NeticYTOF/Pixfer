@@ -1,176 +1,255 @@
 :root {
-  --bg: #0c0d10;
-  --panel: #14161c;
-  --panel-2: #1c202a;
-  --line: #262a33;
-  --text: #f2f3f5;
-  --muted: #8a8f98;
+  --bg: #0b0d12;
+  --panel: #141822;
+  --panel-2: #1b2130;
+  --line: #262d3d;
+  --text: #f2f4f8;
+  --muted: #9aa3b2;
   --accent: #ffb454;
-  --radius: 6px;
+  --radius: 14px;
+  --shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
 }
 
-* { box-sizing: border-box; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; }
 body {
-  min-height: 100vh;
-  background: var(--bg);
+  min-height: 100dvh;
+  background:
+    radial-gradient(1100px 700px at 85% -10%, rgba(255, 180, 84, 0.07), transparent 60%),
+    radial-gradient(900px 700px at -10% 110%, rgba(78, 130, 255, 0.06), transparent 60%),
+    var(--bg);
   color: var(--text);
   font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  overscroll-behavior: none;
 }
 
-.view { min-height: 100vh; display: flex; }
+.view { min-height: 100dvh; display: flex; }
 [hidden] { display: none !important; }
 
-/* ---------- landing: asymmetric split ---------- */
+/* ---------- landing ---------- */
 #landing {
   align-items: center;
   justify-content: center;
-  padding: 40px 24px;
+  padding: 48px 20px calc(48px + env(safe-area-inset-bottom));
 }
 .landing-inner {
+  max-width: 620px;
+  width: 100%;
   display: flex;
-  gap: 48px;
-  max-width: 960px;
-  text-align: left;
+  flex-direction: column;
+  gap: 30px;
+  text-align: center;
 }
-.landing-text { flex: 1; }
 .brand {
   margin: 0;
   font-family: "Arial Narrow", "Roboto Condensed", system-ui, sans-serif;
-  font-size: clamp(44px, 9vw, 72px);
+  font-size: clamp(56px, 12vw, 88px);
   font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--text);
+  letter-spacing: -0.03em;
+  line-height: 1;
+  background: linear-gradient(180deg, #ffffff, #ffb454);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
-.tagline { color: var(--muted); margin: 14px 0 28px; }
-.mode-buttons { display: flex; gap: 14px; flex-wrap: wrap; }
-.mode-btn {
-  min-height: 56px;
-  min-width: 190px;
-  padding: 12px 24px;
-  border-radius: var(--radius);
+.tagline { color: var(--muted); margin: 12px 0 0; font-size: 16px; }
+
+.mode-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.mode-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-height: 148px;
+  padding: 24px 16px;
+  border-radius: 18px;
   border: 1px solid var(--line);
   background: var(--panel);
   color: var(--text);
-  font-size: 15px;
   cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease;
 }
-.mode-btn:hover { border-color: var(--accent); }
-.mode-btn:active { border-color: var(--accent); }
-.mode-btn.accent {
-  background: var(--accent);
-  color: #14161c;
+.mode-card:active { transform: scale(0.97); }
+.mode-card:hover { border-color: var(--accent); }
+.mode-card svg { width: 34px; height: 34px; opacity: 0.9; }
+.mode-card.accent {
+  background: linear-gradient(180deg, #ffc675, #ffa338);
   border-color: transparent;
+  color: #20150a;
 }
-.hint { color: var(--muted); font-size: 13px; margin: 24px 0 0; }
+.mc-title { font-size: 20px; font-weight: 700; }
+.mc-sub { font-size: 13px; opacity: 0.75; }
 
-.landing-side {
-  width: 220px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  border-left: 1px solid var(--line);
-  padding-left: 24px;
-}
-.swatch-strip {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
-}
-.swatch-strip span {
-  width: 100%;
-  aspect-ratio: 1;
+.chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.chip {
   border: 1px solid var(--line);
-  border-radius: 3px;
-}
-.side-note {
   color: var(--muted);
+  padding: 5px 13px;
+  border-radius: 999px;
   font-size: 12px;
-  line-height: 1.5;
-  margin: 0;
 }
+.hint { color: var(--muted); font-size: 13px; margin: 0; line-height: 1.6; }
 
 /* ---------- shared view chrome ---------- */
-#tx-view, #rx-view {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-}
+#tx-view, #rx-view { flex-direction: column; height: 100dvh; }
 .bar {
-  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-  padding: 12px 16px;
-  background: var(--panel);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px calc(10px + env(safe-area-inset-top));
+  padding-top: calc(10px + env(safe-area-inset-top));
+  background: color-mix(in srgb, var(--panel) 78%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--line);
+  position: relative;
+  z-index: 5;
 }
 .bar-title {
   font-family: "Arial Narrow", "Roboto Condensed", system-ui, sans-serif;
   font-weight: 700;
   font-size: 14px;
-  text-transform: uppercase; letter-spacing: .08em;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
   color: var(--muted);
 }
-.bar-meta { color: var(--muted); font-size: 13px; }
-.filepick { display: flex; align-items: center; gap: 8px; }
+.bar-meta { color: var(--muted); font-size: 12px; margin-left: auto; text-align: right; }
+
+.filepick { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .filepick input[type="file"] { display: none; }
 .filepick span {
-  padding: 8px 14px;
+  padding: 9px 15px;
   border: 1px dashed var(--line);
-  border-radius: var(--radius);
+  border-radius: 999px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 44vw;
+}
+.filepick span:hover { border-color: var(--accent); color: var(--text); }
+
+.ghost {
+  padding: 9px 15px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
   color: var(--muted);
   cursor: pointer;
   font-size: 14px;
 }
-.ghost {
-  padding: 8px 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-.ghost:hover { color: var(--text); border-color: var(--accent); }
+.ghost:hover, .ghost:active { color: var(--text); border-color: var(--accent); }
 
-/* ---------- stage: centered QR-code-sized light canvas ---------- */
-.stage {
-  position: relative;
-  flex: 1;
+/* ---------- stages ---------- */
+.stage { flex: 1; position: relative; overflow: hidden; }
+
+/* TX: centered column — the QR is the hero */
+.stage-col {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  gap: 18px;
+  padding: 24px 20px calc(24px + env(safe-area-inset-bottom));
 }
-/* The flashing QR renders into this square box, centered in the stage —
-   like a traditional QR code sitting on the screen, not a full-screen
-   grid. */
-.light-canvas {
-  width: min(92vw, 560px);
+#tx-view .light-canvas {
+  width: min(78vmin, 460px);
   aspect-ratio: 1;
   background: #000;
   border: 1px solid var(--line);
-}
-.cam-src { display: none; }
-.cam-preview {
-  position: absolute;
-  bottom: 70px; right: 16px;
-  width: 170px; aspect-ratio: 4 / 3;
-  border: 1px solid var(--line);
   border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+#tx-view .status {
+  max-width: min(78vmin, 460px);
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+  min-height: 1.5em;
+}
+#tx-view .progress { width: min(78vmin, 460px); }
+#tx-view .cam-preview {
+  position: absolute;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  width: 104px;
+  aspect-ratio: 4 / 3;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #000;
+  overflow: hidden;
+}
+
+/* RX: full-bleed camera, scanner-app layout */
+.stage-cam { background: #000; }
+.cam-src { display: none; }
+.cam-view {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   background: #000;
 }
-.status {
+.viewfinder {
   position: absolute;
-  left: 16px; right: 16px; bottom: 34px;
-  text-align: center;
-  color: var(--text);
-  font-size: 13px;
-  background: rgba(12, 13, 16, 0.72);
-  padding: 6px 10px;
-  border-radius: var(--radius);
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
 }
-.progress {
+.vf { width: min(80vmin, 440px); aspect-ratio: 1; position: relative; }
+.vf i {
   position: absolute;
-  left: 16px; right: 16px; bottom: 12px;
-  height: 5px;
+  width: 30px;
+  height: 30px;
+  border: 3px solid var(--accent);
+  opacity: 0.9;
+}
+.vf i:nth-child(1) { top: 0; left: 0; border-right: 0; border-bottom: 0; border-radius: 12px 0 0 0; }
+.vf i:nth-child(2) { top: 0; right: 0; border-left: 0; border-bottom: 0; border-radius: 0 12px 0 0; }
+.vf i:nth-child(3) { bottom: 0; left: 0; border-right: 0; border-top: 0; border-radius: 0 0 0 12px; }
+.vf i:nth-child(4) { bottom: 0; right: 0; border-left: 0; border-top: 0; border-radius: 0 0 12px 0; }
+
+#rx-view .status {
+  position: absolute;
+  top: calc(14px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 88%;
+  text-align: center;
+  background: rgba(9, 11, 17, 0.74);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 9px 16px;
+  font-size: 13px;
+  z-index: 4;
+}
+#rx-view .progress {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+}
+#rx-view .light-canvas {
+  position: absolute;
+  right: 16px;
+  bottom: calc(36px + env(safe-area-inset-bottom));
+  width: min(52vw, 140px);
+  aspect-ratio: 1;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #000;
+  overflow: hidden;
+  z-index: 4;
+}
+
+.progress {
+  height: 6px;
   background: var(--panel-2);
   border-radius: 3px;
   overflow: hidden;
@@ -179,39 +258,21 @@ body {
   height: 100%;
   width: 0%;
   background: var(--accent);
-}
-
-/* ---------- per-view heroes: send vs receive look different ---------- */
-/* TX: the flashing light box is the hero (big, centered), camera preview
-   stays a small corner box (it only reads the peer's Ack/Nak). */
-#tx-view .light-canvas { width: min(92vw, 560px); }
-#tx-view .cam-preview { width: 170px; }
-
-/* RX: the camera viewfinder is the hero (big, centered), and the emit box
-   (Pong/Ack/Nak) is a small corner box. */
-#rx-view .cam-preview {
-  position: static;
-  width: min(80vw, 520px);
-  aspect-ratio: 4 / 3;
-}
-#rx-view .light-canvas {
-  position: absolute;
-  bottom: 70px;
-  right: 16px;
-  width: min(60vw, 320px);
+  border-radius: 3px;
+  transition: width 0.25s ease;
 }
 
 /* ---------- mobile ---------- */
-@media (max-width: 640px) {
-  .landing-inner { flex-direction: column; gap: 24px; }
-  .landing-side {
-    width: 100%;
-    border-left: none;
-    padding-left: 0;
-    border-top: 1px solid var(--line);
-    padding-top: 16px;
-  }
-  .mode-btn { min-width: 46%; }
-  .cam-preview { width: 120px; }
-  #rx-view .cam-preview { width: min(92vw, 520px); }
+@media (max-width: 560px) {
+  .mode-cards { grid-template-columns: 1fr; }
+  .mode-card { min-height: 96px; flex-direction: row; justify-content: flex-start; gap: 14px; padding: 20px; }
+  .mode-card svg { width: 26px; height: 26px; }
+  .mode-card .mc-sub { display: block; }
+  #tx-view .cam-preview { width: 88px; }
+  .bar { flex-wrap: nowrap; }
+  .filepick span { max-width: 34vw; }
+}
+@media (min-width: 900px) {
+  .landing-inner { gap: 36px; }
+  .mode-card { min-height: 170px; }
 }

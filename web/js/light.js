@@ -9,8 +9,15 @@ import * as core from "./core.js";
 // frame. Prefers requestVideoFrameCallback (Chrome 107+); falls back to
 // requestAnimationFrame polling.
 export async function openCamera(video, onFrame) {
+  // Ask for the highest resolution the device will give — at phone-to-phone
+  // distance the QR covers only ~20% of the frame, and every extra pixel
+  // is another half a module of detail for the decoder.
   const stream = await navigator.mediaDevices.getUserMedia({
-    video: { width: 1280, height: 720, facingMode: "environment" },
+    video: {
+      facingMode: "environment",
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+    },
     audio: false,
   });
   video.srcObject = stream;

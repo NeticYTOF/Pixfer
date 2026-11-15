@@ -305,6 +305,23 @@ test("camera sim: far away — small code rescued by the DS=2 retry", () => {
   assert.ok(r.ds2Rescues > 0, "expected the DS=2 retry to rescue small-code frames");
 });
 
+test("camera sim: phone-to-phone distance (tiny code in view)", () => {
+  // Phone-to-phone reality: the sender's screen is small, so at holding
+  // distance the QR covers only ~20% of the camera frame — modules land
+  // near 2 px in the DS=2 buffer. This is the harsh edge: a partial
+  // per-frame decode rate is fine, because every frame is numbered and
+  // the loop brings back whatever is missed (9 frames per chunk at this
+  // rate still lands each chunk in one pass ~95% of the time). Real
+  // 720p cameras also run the full-res pass this sim cannot model, so
+  // production does better than the number here.
+  const r = runScenario("far-phone", {
+    boxPx: 260, motion: "static", rot: 0, blurSigma: 0.8, noiseSigma: 6, wb: [1, 1, 1],
+    brightness: 1.0, exposureMs: 15, jitterPx: 2, seed: 909,
+  }, 1);
+  assert.ok(r.rate >= 0.2, `rate ${(r.rate * 100).toFixed(0)}% < 20%`);
+  assert.ok(r.ds2Rescues > 0, "expected the fine-scale pass to rescue tiny-code frames");
+});
+
 test("camera sim: hand shake — drift, tremor, rotation wobble", () => {
   const r = runScenario("shake", {
     boxPx: 560, motion: "shake", blurSigma: 1.1, noiseSigma: 10, wb: [1.06, 1.0, 0.96],

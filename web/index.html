@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-<meta name="theme-color" content="#0b0e14" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0b0d12" />
 <meta name="description" content="Pixfer — share files between two devices using only light: one screen flashes colored QR frames, the other reads them with its camera. No wifi, bluetooth, or installs." />
 <title>Pixfer</title>
 <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="%23fff"/><rect x="3" y="3" width="9" height="9" fill="%23000"/><rect x="5" y="5" width="5" height="5" fill="%23fff"/><rect x="6" y="6" width="3" height="3" fill="%23000"/><rect x="20" y="3" width="9" height="9" fill="%23c00000"/><rect x="22" y="5" width="5" height="5" fill="%23fff"/><rect x="23" y="6" width="3" height="3" fill="%23c00000"/><rect x="3" y="20" width="9" height="9" fill="%230000c0"/><rect x="5" y="22" width="5" height="5" fill="%23fff"/><rect x="6" y="23" width="3" height="3" fill="%230000c0"/><rect x="20" y="20" width="4" height="4" fill="%23009000"/><rect x="26" y="20" width="3" height="3" fill="%23c06000"/><rect x="20" y="26" width="3" height="3" fill="%238000a0"/><rect x="25" y="25" width="4" height="4" fill="%23009696"/></svg>' />
@@ -15,65 +15,73 @@
   <!-- landing -->
   <section id="landing" class="view">
     <div class="landing-inner">
-      <div class="landing-text">
+      <div class="brand-wrap">
         <h1 class="brand">Pixfer</h1>
         <p class="tagline">
-          share files over light — no wifi, no bluetooth, no gps.<br />
-          just a screen and a camera.
+          beam a file from one screen to another with light —<br />
+          one flashes numbered QR frames, the other scans them. no network, no pairing.
         </p>
-        <div class="mode-buttons">
-          <button id="btn-tx" class="mode-btn accent">send a file</button>
-          <button id="btn-rx" class="mode-btn">receive a file</button>
-        </div>
-        <p class="hint">open this page on two devices — one sends, one receives.<br />keep both screens awake and the tab visible; cameras need https:// or localhost.</p>
       </div>
-      <div class="landing-side">
-        <div class="swatch-strip">
-          <span style="background:#fff" title="white (quiet zone)"></span>
-          <span style="background:#000" title="black"></span>
-          <span style="background:#c00000" title="red"></span>
-          <span style="background:#009000" title="green"></span>
-          <span style="background:#0000c0" title="blue"></span>
-          <span style="background:#c06000" title="amber"></span>
-          <span style="background:#8000a0" title="purple"></span>
-          <span style="background:#009696" title="cyan"></span>
-        </div>
-        <p class="side-note">flashing multicolor QR codes — every frame carries its number (chunk index), the sender loops until the receiver confirms every frame, Reed–Solomon EC level M.</p>
+      <div class="mode-cards">
+        <button id="btn-tx" class="mode-card accent">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
+          <span class="mc-title">Send</span>
+          <span class="mc-sub">flash the QR on this screen</span>
+        </button>
+        <button id="btn-rx" class="mode-card">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg>
+          <span class="mc-title">Receive</span>
+          <span class="mc-sub">point the camera at the sender</span>
+        </button>
       </div>
+      <div class="chips">
+        <span class="chip">looping QR frames</span>
+        <span class="chip">every frame is numbered</span>
+        <span class="chip">Reed–Solomon corrected</span>
+        <span class="chip">multi-color flash</span>
+      </div>
+      <p class="hint">
+        open this page on two devices. keep both screens awake and bright,
+        hold them 10–20&nbsp;cm apart in a well-lit room.
+        cameras need https:// or localhost.
+      </p>
     </div>
   </section>
 
   <!-- tx (sender) -->
   <section id="tx-view" class="view" hidden>
     <header class="bar">
+      <button id="tx-back" class="ghost" aria-label="back">‹ back</button>
       <span class="bar-title">send</span>
       <label class="filepick">
         <input type="file" id="tx-file" />
         <span id="tx-filename">choose a file</span>
       </label>
       <span id="tx-meta" class="bar-meta"></span>
-      <button id="tx-back" class="ghost">back</button>
     </header>
-    <div class="stage">
+    <div class="stage stage-col">
       <canvas id="tx-canvas" class="light-canvas"></canvas>
-      <video id="tx-camera" class="cam-preview" muted playsinline></video>
       <div id="tx-status" class="status">pick a file to begin</div>
       <div class="progress"><div id="tx-progress" class="progress-fill"></div></div>
+      <video id="tx-camera" class="cam-preview" muted playsinline></video>
     </div>
   </section>
 
   <!-- rx (receiver) -->
   <section id="rx-view" class="view" hidden>
     <header class="bar">
+      <button id="rx-back" class="ghost" aria-label="back">‹ back</button>
       <span class="bar-title">receive</span>
       <button id="rx-lock" class="ghost">lock exposure</button>
-      <button id="rx-back" class="ghost">back</button>
     </header>
-    <div class="stage">
+    <div class="stage stage-cam">
       <video id="rx-video" class="cam-src" muted playsinline></video>
-      <canvas id="rx-canvas" class="cam-preview"></canvas>
-      <canvas id="rx-emit" class="light-canvas"></canvas>
-      <div id="rx-status" class="status">point your camera at the sending screen — fill the view with the colored QR box</div>
+      <canvas id="rx-canvas" class="cam-view"></canvas>
+      <div class="viewfinder" aria-hidden="true">
+        <div class="vf"><i></i><i></i><i></i><i></i></div>
+      </div>
+      <div id="rx-status" class="status">point your camera at the sending screen</div>
+      <canvas id="rx-emit" class="light-canvas reply-chip"></canvas>
       <div class="progress"><div id="rx-progress" class="progress-fill"></div></div>
     </div>
   </section>

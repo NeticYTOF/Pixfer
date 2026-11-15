@@ -40,7 +40,7 @@ export function mountTx(root, fflate, onBack) {
 
   const emitter = makeEmitter(canvas);
   // Idle screen: full-white grid (all blocks 7).
-  emitter.setBlocks(new Uint8Array(core.GRID_W * core.GRID_H).fill(7));
+  emitter.setBlocks(new Uint8Array(core.GRID_W * core.GRID_H).fill(0));
 
   let session = null;
   let data = null;
@@ -201,7 +201,7 @@ export function mountTx(root, fflate, onBack) {
       progressFill.style.width = "100%";
       metaEl.textContent = "done";
       setStatus("done — receiver confirmed every frame (" + elapsedS() + "s)");
-      emitter.setBlocks(new Uint8Array(core.GRID_W * core.GRID_H).fill(7));
+      emitter.setBlocks(new Uint8Array(core.GRID_W * core.GRID_H).fill(0));
     }
   }
 
