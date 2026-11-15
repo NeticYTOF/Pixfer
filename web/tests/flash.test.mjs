@@ -4,7 +4,8 @@
 // Run: node tests/flash.test.mjs (from web/)
 
 import * as core from "../js/core.js";
-import { makeEmitter } from "../js/light.js";
+import { makeEmitter, QR_DARK_COLORS, QR_QUIET_MODULES } from "../js/light.js";
+import { qrEncode } from "../js/qr.js";
 
 let pass = 0;
 let fail = 0;
@@ -161,6 +162,81 @@ function check(name, cond, detail) {
     puts[1].data[x * 4 + 1] === core.PALETTE[iv][1] &&
     puts[1].data[x * 4 + 2] === core.PALETTE[iv][2]);
 
+  globalThis.requestAnimationFrame = origRaf;
+}
+
+// ---------- 6) makeEmitter paints QR codes as a centered colored box ----------
+{
+  const W = 300;
+  const H = 200;
+  const rects = [];
+  let cur = "";
+  const canvas = {
+    width: W,
+    height: H,
+    getContext: () => ({
+      set fillStyle(v) { cur = v; },
+      get fillStyle() { return cur; },
+      fillRect: (x, y, w2, h2) => { rects.push({ x, y, w: w2, h: h2, style: cur }); },
+    }),
+  };
+
+  let fakeNow = 0;
+  try { performance.now = () => fakeNow; } catch (e) { /* real clock */ }
+  const rafQ = [];
+  const origRaf = globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame = (cb) => { rafQ.push(cb); return rafQ.length; };
+  const runRaf = () => {
+    const q = rafQ.splice(0, rafQ.length);
+    for (const cb of q) cb();
+  };
+
+  const frame = core.newFrame("Ping", 9, 0, 1, null);
+  const qr = qrEncode(frame);
+  const n = qr.size;
+  const emitter = makeEmitter(canvas);
+  emitter.setQr(qr);
+  runRaf(); // phase 1 paint (normal)
+
+  // expected geometry: centered square box with a quiet zone
+  const units = n + 2 * QR_QUIET_MODULES;
+  const mp = Math.max(1, Math.floor(Math.min(W, H) / units));
+  const box = mp * units;
+  const ox = Math.floor((W - box) / 2);
+  const oy = Math.floor((H - box) / 2);
+
+  const bg1 = rects[0];
+  check("qr paint: white background fills canvas (normal phase)",
+    bg1 && bg1.x === 0 && bg1.y === 0 && bg1.w === W && bg1.h === H && bg1.style === "rgb(255,255,255)");
+
+  const mods1 = rects.slice(1);
+  check("qr paint: modules inside the centered box",
+    mods1.length > 0 &&
+    mods1.every((m) =>
+      m.x >= ox + QR_QUIET_MODULES * mp && m.x + m.w <= ox + box - QR_QUIET_MODULES * mp &&
+      m.y >= oy + QR_QUIET_MODULES * mp && m.y + m.h <= oy + box - QR_QUIET_MODULES * mp));
+
+  // the TL finder corner module (0,0) is always dark
+  const tl = mods1.find((m) => m.x === ox + QR_QUIET_MODULES * mp && m.y === oy + QR_QUIET_MODULES * mp);
+  const paletteStyles = QR_DARK_COLORS.map((c) => `rgb(${c[0]},${c[1]},${c[2]})`);
+  check("qr paint: finder module uses a dark palette color",
+    !!tl && paletteStyles.includes(tl.style), tl && tl.style);
+
+  const styles1 = new Set(mods1.map((m) => m.style));
+  check("qr paint: dark modules are multicolored", styles1.size > 1, "styles: " + styles1.size);
+
+  fakeNow = 50; // >= FLASH_PHASE_MS -> inverted phase
+  const phase2Start = rects.length;
+  runRaf(); // tick: flips the phase and repaints inverted
+  const p2 = rects.slice(phase2Start);
+  const bg2 = p2[0];
+  check("qr paint: black background fills canvas (inverted phase)",
+    bg2 && bg2.x === 0 && bg2.y === 0 && bg2.w === W && bg2.h === H && bg2.style === "rgb(0,0,0)");
+  const mods2 = p2.slice(1);
+  check("qr paint: inverted-phase modules are white",
+    mods2.length > 0 && mods2.every((m) => m.style === "rgb(255,255,255)"));
+
+  emitter.stop();
   globalThis.requestAnimationFrame = origRaf;
 }
 

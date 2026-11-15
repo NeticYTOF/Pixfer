@@ -1,11 +1,13 @@
 // Actual QR code tests: the VERSIONS table matches published byte
 // capacities (level M), version selection, pixel round-trip (normal and
-// inverted flash phases), and RS correction of corrupted modules.
+// inverted flash phases), RS correction of corrupted data modules, and a
+// multicolor round-trip (dark modules rendered in the sender's palette).
 // Run: node tests/qr.test.mjs (from web/)
 
 import * as core from "../js/core.js";
-import { qrEncode, qrCapacityBytes } from "../js/qr.js";
+import { qrEncode, qrCapacityBytes, buildReserved } from "../js/qr.js";
 import { qrDecodeFromPixels } from "../js/qrdecode.js";
+import { QR_DARK_COLORS } from "../js/light.js";
 
 let pass = 0;
 let fail = 0;
@@ -25,7 +27,7 @@ function check(name, cond, detail) {
 // 1) VERSIONS table matches the published byte capacities (EC level M).
 // (ISO/IEC 18004 published maximum data capacity, byte mode.)
 {
-  const expected = { 1: 14, 2: 26, 9: 176, 10: 194, 11: 208, 12: 232, 13: 260 };
+  const expected = { 1: 14, 2: 26, 9: 180, 10: 213, 11: 251, 12: 287, 13: 331 };
   for (const [v, cap] of Object.entries(expected)) {
     const got = qrCapacityBytes(+v);
     check(`QR v${v}-M capacity == ${cap}`, got === cap, `got ${got}`);
@@ -42,7 +44,7 @@ function check(name, cond, detail) {
   const payload = new Uint8Array(core.RS_K).fill(0x42);
   const chunk = core.newFrame("Chunk", 1234, 3, 5, payload);
   const r2 = qrEncode(chunk);
-  check("chunk frame (246 B) encodes to v13 (69 modules)", r2.version === 13 && r2.size === 69,
+  check("chunk frame (246 B) encodes to v11 (61 modules)", r2.version === 11 && r2.size === 61,
     `v=${r2.version} n=${r2.size}`);
 }
 
@@ -76,7 +78,7 @@ function qrPixels(qr, pxPerModule = 8) {
   const qr = qrEncode(frame);
   const { data, w, h } = qrPixels(qr);
   const dec = qrDecodeFromPixels(data, w, h);
-  check("round-trip: normal phase decodes", dec.ok);
+  check("round-trip: normal phase decodes", dec.ok, dec.error);
   check("round-trip: frame fields recovered",
     dec.ok &&
     dec.frame.kind === "Chunk" &&
@@ -94,24 +96,35 @@ function qrPixels(qr, pxPerModule = 8) {
   const qr = qrEncode(frame);
   const { data, w, h } = qrPixels(qr);
   const inv = new Uint8Array(data.length);
-  for (let i = 0; i < data.length; i++) inv[i] = 255 - data[i];
+  for (let i = 0; i < data.length; i += 4) {
+    inv[i] = 255 - data[i];
+    inv[i + 1] = 255 - data[i + 1];
+    inv[i + 2] = 255 - data[i + 2];
+    inv[i + 3] = 255;
+  }
   const dec = qrDecodeFromPixels(inv, w, h);
-  check("inverted phase decodes", dec.ok);
+  check("inverted phase decodes", dec.ok, dec.error);
   check("inverted phase recovers frame",
     dec.ok && dec.frame.kind === "Chunk" && dec.frame.sessionId === 1234);
   check("inverted phase flagged", dec.inverted === true);
 }
 
-// 5) RS correction: flip 20 modules (v13-M corrects up to t=44) and the
-// frame still decodes.
+// 5) RS correction: flip 20 DATA modules (reserved cells untouched) and
+// the frame still decodes. v11-M blocks correct up to floor(30/2) = 15
+// byte errors per block; 20 single-bit flips spread over 5 blocks is
+// comfortably inside the bound.
 {
   const payload = new Uint8Array(core.RS_K).fill(0x42);
   const frame = core.newFrame("Chunk", 777, 0, 2, payload);
   const qr = qrEncode(frame);
   const { data, w, h } = qrPixels(qr);
   const n = qr.size;
+  const reserved = buildReserved(qr.version);
+  const dataCells = [];
+  for (let i = 0; i < n * n; i++) if (!reserved[i]) dataCells.push(i);
   for (let i = 0; i < 20; i++) {
-    const modIdx = (i * 97) % (n * n); // coprime stride: distinct modules
+    // coprime stride: distinct data cells
+    const modIdx = dataCells[(i * 1013) % dataCells.length];
     const r = (modIdx / n) | 0;
     const c = modIdx % n;
     for (let dy = 0; dy < 8; dy++) {
@@ -123,8 +136,44 @@ function qrPixels(qr, pxPerModule = 8) {
     }
   }
   const dec = qrDecodeFromPixels(data, w, h);
-  check("corrupted QR still decodes (RS correction)", dec.ok);
+  check("corrupted QR still decodes (RS correction)", dec.ok, dec.error);
   check("corrupted QR recovers payload", dec.ok && dec.frame.payload[0] === 0x42 && dec.frame.sessionId === 777);
+}
+
+// 6) Multicolor round-trip: dark modules rendered in the sender's dark
+// palette (as light.js paints them) still decode — the color carries no
+// data, only the dark/light classification matters (isDarkPixel).
+{
+  const payload = new Uint8Array(core.RS_K).fill(0x42);
+  const frame = core.newFrame("Chunk", 555, 1, 3, payload);
+  const qr = qrEncode(frame);
+  const n = qr.size;
+  const px = 8;
+  const quiet = 4; // quiet-zone modules, as light.js renders
+  const w = (n + 2 * quiet) * px;
+  const h = w;
+  const data = new Uint8Array(w * h * 4);
+  for (let r = -quiet; r < n + quiet; r++) {
+    for (let c = -quiet; c < n + quiet; c++) {
+      let col;
+      if (r < 0 || c < 0 || r >= n || c >= n) col = [255, 255, 255];
+      else if (qr.data[r * n + c]) col = QR_DARK_COLORS[(r * 7 + c * 11) % QR_DARK_COLORS.length];
+      else col = [255, 255, 255];
+      for (let dy = 0; dy < px; dy++) {
+        for (let dx = 0; dx < px; dx++) {
+          const idx = (((r + quiet) * px + dy) * w + ((c + quiet) * px + dx)) * 4;
+          data[idx] = col[0];
+          data[idx + 1] = col[1];
+          data[idx + 2] = col[2];
+          data[idx + 3] = 255;
+        }
+      }
+    }
+  }
+  const dec = qrDecodeFromPixels(data, w, h);
+  check("multicolor QR decodes", dec.ok, dec.error);
+  check("multicolor QR recovers frame",
+    dec.ok && dec.frame.kind === "Chunk" && dec.frame.sessionId === 555 && dec.frame.payload[0] === 0x42);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

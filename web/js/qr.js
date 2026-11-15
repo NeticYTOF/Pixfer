@@ -358,16 +358,15 @@ function placeVersionInfo(m, version) {
   if (version < 7) return;
   const bits18 = bch18(version);
   const n = m.size;
+  // Spec placement: 3x6 blocks hugging the TR finder (cols n-11..n-9,
+  // rows 0..5) and the BL finder (cols 0..5, rows n-11..n-9). These never
+  // overlap finder patterns or separators, so no reserved-cell guards.
   for (let i = 0; i < 18; i++) {
-    const bit = (bits18 >> (17 - i)) & 1;
-    // Block above the TR finder: rows 0-2, cols n-9..n-4 (3 rows x 6 cols).
-    if (!m.isReserved(n - 9 + (i % 6), (i / 6) | 0)) {
-      m.set(n - 9 + (i % 6), (i / 6) | 0, bit === 1);
-    }
-    // Block right of the BL finder: cols 0-2, rows n-7..n-5.
-    if (!m.isReserved(i % 3, n - 7 + ((i / 3) | 0))) {
-      m.set(i % 3, n - 7 + ((i / 3) | 0), bit === 1);
-    }
+    const bit = ((bits18 >> (17 - i)) & 1) === 1;
+    const a = n - 11 + (i % 3);
+    const b = (i / 3) | 0;
+    m.set(a, b, bit);
+    m.set(b, a, bit);
   }
 }
 
@@ -406,8 +405,12 @@ function placeData(m, codewords) {
       for (let k = 0; k < 2; k++) {
         const x = c - k;
         if (x < 0 || x >= n) continue;
+        // Write WITHOUT calling m.set(): set() would mark the cell
+        // reserved, and the mask pass skips reserved cells — the data
+        // modules must stay maskable or the decoder's unmask corrupts
+        // every codeword.
         if (!m.isReserved(x, r) && bi < bits.length) {
-          m.set(x, r, bits[bi++] === 1);
+          m.data[r * n + x] = bits[bi++];
         }
       }
     }
@@ -499,8 +502,8 @@ export function buildReserved(version) {
   }
   if (version >= 7) {
     for (let i = 0; i < 18; i++) {
-      m.set(n - 9 + (i % 6), (i / 6) | 0);
-      m.set(i % 3, n - 7 + ((i / 3) | 0));
+      m.set(n - 11 + (i % 3), (i / 3) | 0);
+      m.set((i / 3) | 0, n - 11 + (i % 3));
     }
   }
   return m.reserved;
@@ -528,7 +531,12 @@ export function qrEncode(frame) {
     const maskFn = MASKS[mask];
     const mn = new QrMatrix(n);
     mn.data.set(m.data);
-    mn.reserved.set(m.reserved);
+    // Reserve the full function-module map (finders, timing, alignment,
+    // dark module, format info, version info) BEFORE placing data —
+    // otherwise placeData writes codeword bits into format/version cells,
+    // and the decoder (which skips those cells) reads a shifted bit stream
+    // that no amount of Reed-Solomon can fix.
+    mn.reserved.set(buildReserved(version));
     placeData(mn, codewords);
     for (let r = 0; r < n; r++) {
       for (let c = 0; c < n; c++) {

@@ -28,18 +28,29 @@ import {
 
 const DS = 4; // downscale factor for detection
 
-// Versions the pixfer protocol actually uses: control frames fit v2,
-// chunk frames (246 bytes) fit v13. Fallback order for when the version
-// info is corrupted.
-const FALLBACK_VERSIONS = [13, 2, 10, 12, 14];
+// Versions the pixfer protocol actually uses: chunk frames (246 bytes) fit
+// v11 at EC level M; control frames fit v2. Versions below 7 carry no
+// version-info blocks, so v11 must be tried explicitly in the fallback
+// loop when the version word can't be read.
+const FALLBACK_VERSIONS = [11, 13, 2, 10, 12, 14];
 
-// ---------- black-mask + connected components ----------
+// ---------- dark/light classification + connected components ----------
+
+// A pixel is "dark" when it is luminance-dark OR strongly saturated with a
+// low minimum channel. The sender renders dark QR modules in saturated
+// colors; those keep one channel near 0 even after camera gain and
+// white-balance shifts, so colored modules still classify as dark.
+function isDarkPixel(r, g, b) {
+  if ((r + g + b) / 3 < 128) return true;
+  const mx = Math.max(r, g, b);
+  const mn = Math.min(r, g, b);
+  return mx - mn >= 80 && mn <= 128;
+}
 
 function blackMask(data, w, h) {
   const mask = new Uint8Array(w * h);
   for (let i = 0; i < w * h; i++) {
-    const g = (data[i * 4] + data[i * 4 + 1] + data[i * 4 + 2]) / 3;
-    mask[i] = g < 128 ? 1 : 0;
+    mask[i] = isDarkPixel(data[i * 4], data[i * 4 + 1], data[i * 4 + 2]) ? 1 : 0;
   }
   return mask;
 }
@@ -95,6 +106,8 @@ function squareBlobs(comps) {
 }
 
 export function detectFinders(data, w, h) {
+  // Finder rings first as dark blobs (normal phase: colored/black rings on
+  // white); retry with a white mask for the inverted flash phase.
   let squares = squareBlobs(components(blackMask(data, w, h), w, h));
   if (squares.length < 2) {
     // Inverted flash phase: the QR is white-on-black, so the finders are
@@ -106,46 +119,97 @@ export function detectFinders(data, w, h) {
     }
     squares = squareBlobs(components(white, w, h));
   }
-  const top = squares.slice(0, 3);
-  if (top.length < 2) return { found: false, tl: null, tr: null, bl: null, estimated: false };
-  const sorted = top.slice().sort((a, b) => (a.cx + a.cy) - (b.cx + b.cy));
-  let tl, tr, bl;
-  let estimated = false;
-  if (top.length === 3) {
-    tl = sorted[0];
-    const rest = sorted.slice(1);
-    tr = rest[0].cx >= rest[1].cx ? rest[0] : rest[1];
-    bl = tr === rest[0] ? rest[1] : rest[0];
-  } else if (top.length === 2) {
-    // Only two finders: estimate the third from square-geometry.
-    const a = sorted[0], b = sorted[1];
-    if (Math.abs(a.cy - b.cy) <= 0.25 * Math.abs(a.cx - b.cx)) {
-      // Same row → TL + TR; estimate BL below TL at the same distance.
-      tl = a;
-      tr = b;
-      bl = { cx: a.cx, cy: a.cy + Math.abs(b.cx - a.cx), w: a.w, h: a.h, count: a.count, fillRatio: a.fillRatio };
-      estimated = true;
-    } else {
-      // Same column → TL + BL; estimate TR to the right of TL.
-      tl = a;
-      bl = b;
-      tr = { cx: a.cx + Math.abs(b.cy - a.cy), cy: a.cy, w: a.w, h: a.h, count: a.count, fillRatio: a.fillRatio };
-      estimated = true;
+  if (squares.length < 2) return { found: false, tl: null, tr: null, bl: null, estimated: false };
+
+  const size = (c) => (c.w + c.h) / 2;
+  const sizeFits = (a, b) => Math.abs(size(a) - size(b)) <= 0.15 * Math.max(size(a), size(b));
+
+  // Triple pass: pick the three same-sized blobs forming the TL+TR+BL
+  // right-isosceles corner, scoring by geometric error (minimal wins). A
+  // data blob can mimic one ring, but three blobs almost never line up as
+  // a tight corner — so error, not blob size, picks the finders.
+  let best = null;
+  let bestErr = Infinity;
+  let bestSize = 0;
+  for (const a of squares) {
+    for (const b of squares) {
+      if (b === a) continue;
+      if (b.cx - a.cx <= 0) continue;
+      const rowErr = Math.abs(b.cy - a.cy) / (b.cx - a.cx);
+      if (rowErr > 0.12) continue; // TR: right of TL, same row
+      if (!sizeFits(a, b)) continue;
+      for (const c of squares) {
+        if (c === a || c === b) continue;
+        if (c.cy - a.cy <= 0) continue;
+        const colErr = Math.abs(c.cx - a.cx) / (c.cy - a.cy);
+        if (colErr > 0.12) continue; // BL: below TL, same column
+        if (!sizeFits(a, c) || !sizeFits(b, c)) continue;
+        const distX = b.cx - a.cx;
+        const distY = c.cy - a.cy;
+        const squareErr = Math.abs(distX - distY) / Math.max(distX, distY);
+        if (squareErr > 0.1) continue; // square frame
+        const spread =
+          (Math.max(size(a), size(b), size(c)) - Math.min(size(a), size(b), size(c))) /
+          Math.max(size(a), size(b), size(c));
+        const err = rowErr + colErr + squareErr + spread;
+        const totalSize = size(a) + size(b) + size(c);
+        if (err < bestErr - 1e-9 || (err < bestErr + 1e-9 && totalSize > bestSize)) {
+          bestErr = err;
+          bestSize = totalSize;
+          best = { tl: a, tr: b, bl: c };
+        }
+      }
     }
   }
-  return { found: true, tl, tr, bl, estimated };
+  if (best) return { found: true, tl: best.tl, tr: best.tr, bl: best.bl, estimated: false };
+
+  // Pair pass (partial view): two same-sized finders + a square-geometry
+  // estimate of the third.
+  const sorted = squares.slice().sort((x, y) => (x.cx + x.cy) - (y.cx + y.cy));
+  const a = sorted[0];
+  for (const b of sorted.slice(1)) {
+    if (!sizeFits(a, b)) continue;
+    const dx = Math.abs(a.cx - b.cx);
+    const dy = Math.abs(a.cy - b.cy);
+    if (dy <= 0.25 * dx) {
+      // Same row → TL + TR; estimate BL below TL at the same distance.
+      const tl = a.cx <= b.cx ? a : b;
+      const tr = a.cx <= b.cx ? b : a;
+      return {
+        found: true,
+        tl,
+        tr,
+        bl: { cx: tl.cx, cy: tl.cy + dx, w: tl.w, h: tl.h, count: tl.count, fillRatio: tl.fillRatio },
+        estimated: true,
+      };
+    }
+    if (dx <= 0.25 * dy) {
+      // Same column → TL + BL; estimate TR to the right of TL.
+      const tl = a.cy <= b.cy ? a : b;
+      const bl = a.cy <= b.cy ? b : a;
+      return {
+        found: true,
+        tl,
+        bl,
+        tr: { cx: tl.cx + dy, cy: tl.cy, w: tl.w, h: tl.h, count: tl.count, fillRatio: tl.fillRatio },
+        estimated: true,
+      };
+    }
+    // Diagonal pair — cannot anchor a square estimate.
+  }
+  return { found: false, tl: null, tr: null, bl: null, estimated: false };
 }
 
 // ---------- pure decode: RGBA pixels → pixfer frame ----------
 
-// Sample one module (r, c) from the downscale pixel buffer.
-function makeSampler(data, w, h, offX, offY, pitchX, pitchY) {
+// Sample one module (r, c) through the affine grid g = { o, ux, uy }.
+function makeSampler(data, w, h, g) {
+  const { o, ux, uy } = g;
   return (modRow, modCol) => {
-    const x = Math.max(0, Math.min(w - 1, (offX + (modCol + 0.5) * pitchX | 0)));
-    const y = Math.max(0, Math.min(h - 1, (offY + (modRow + 0.5) * pitchY | 0)));
+    const x = Math.max(0, Math.min(w - 1, (o.x + (modCol + 0.5) * ux.x + (modRow + 0.5) * uy.x) | 0));
+    const y = Math.max(0, Math.min(h - 1, (o.y + (modCol + 0.5) * ux.y + (modRow + 0.5) * uy.y) | 0));
     const idx = (y * w + x) * 4;
-    const g = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
-    return g < 128 ? 1 : 0;
+    return isDarkPixel(data[idx], data[idx + 1], data[idx + 2]) ? 1 : 0;
   };
 }
 
@@ -154,14 +218,16 @@ function readVersionWord(sample, n, block) {
   for (let i = 0; i < 18; i++) {
     const bit =
       block === 0
-        ? sample((i / 6) | 0, n - 9 + (i % 6)) // above TR finder
-        : sample(n - 7 + ((i / 3) | 0), i % 3); // right of BL finder
+        ? sample((i / 3) | 0, n - 11 + (i % 3)) // above TR finder
+        : sample(n - 11 + (i % 3), (i / 3) | 0); // right of BL finder
     word = (word << 1) | bit;
   }
   const v = word >>> 12;
   return bch18(v) === word ? v : 0;
 }
 
+// Read one of the two 15-bit format-info copies, raw. Verification and
+// error tolerance happen in resolveMask via bestFormatMask.
 function readFormatWord(mods, n, copy) {
   let word = 0;
   for (let i = 0; i < 15; i++) {
@@ -178,8 +244,32 @@ function readFormatWord(mods, n, copy) {
     }
     word = (word << 1) | bit;
   }
-  const data5 = (word & 0x1f) ^ 0x12;
-  return bch15(data5) === word ? data5 : -1;
+  return word;
+}
+
+// Match received format words against every valid EC-level-M format word
+// (bch15 already applies the 0x5412 transmit mask). The BCH(15,5) format
+// code has minimum distance 7, so a match within 3 bit errors is
+// unambiguous — a noisy capture still resolves the mask.
+function bestFormatMask(words) {
+  let bestMask = -1;
+  let bestDist = 4; // tolerance is 3 bit errors
+  for (let mask = 0; mask < 8; mask++) {
+    const cand = bch15(mask); // EC level M = 00 -> data5 == mask
+    for (const word of words) {
+      let dist = 0;
+      let x = (word ^ cand) & 0x7fff;
+      while (x) {
+        x &= x - 1;
+        dist++;
+      }
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestMask = mask;
+      }
+    }
+  }
+  return bestMask;
 }
 
 // Read data bits in the standard zigzag order, skipping reserved cells.
@@ -269,38 +359,42 @@ function omegaPoly(s, loc) {
   return o;
 }
 
-// `coded` layout: [parity_0..t-1][data_0..]. Corrects up to t symbol
-// errors (QR error-correction level M).
+// `coded` layout: [parity_0..t-1][data_0..] — parity occupies the low
+// polynomial coefficients (matches qrRsParity's systematic encode, where
+// div[j] holds the coefficient of x^j). The generator has t roots
+// (α^0..α^(t-1)), so t syndromes correct up to floor(t/2) symbol errors.
 function qrRsDecode(coded, t) {
   const n = coded.length;
-  const s = new Uint8Array(2 * t);
-  for (let i = 0; i < 2 * t; i++) {
-    const x = gfExp(i);
+  const s = new Uint8Array(t);
+  for (let j = 0; j < t; j++) {
+    const x = gfExp(j);
     let acc = 0;
     for (let k = n - 1; k >= 0; k--) acc = gfMul(acc, x) ^ coded[k];
-    s[i] = acc;
+    s[j] = acc;
   }
-  if (s.every((v) => v === 0)) {
-    return { ok: true, payload: new Uint8Array(coded.subarray(t)) };
-  }
-  const loc = berlekampMassey(s);
-  const omega = omegaPoly(s, loc);
-  const errs = [];
-  for (let i = 0; i < n; i++) {
-    if (polyEval(loc, gfExp(i)) === 0) errs.push((n - i) % n);
-  }
-  if (errs.length > t) return { ok: false, error: "TooManyErrors" };
+  let dirty = false;
+  for (let j = 0; j < t; j++) if (s[j] !== 0) { dirty = true; break; }
+  if (!dirty) return { ok: true, payload: new Uint8Array(coded.subarray(t)) };
+  const loc = berlekampMassey(s); // Λ(x) = Σ loc[k]·x^k, loc[0] = 1
+  const omega = omegaPoly(s, loc); // Ω = S·Λ mod x^t
+  let errs = 0;
   const out = new Uint8Array(coded);
-  for (const pos of errs) {
-    const x = gfExp((n - pos) % n);
-    const num = polyEval(omega, x);
-    const den = polyDerEval(loc, x);
+  for (let i = 0; i < 255; i++) {
+    if (polyEval(loc, gfExp(i)) !== 0) continue;
+    // Locator root at α^i → error at position p with X = α^-p, so
+    // p = (255 - i) % 255 in the codeword's low-to-high powers.
+    const p = (255 - i) % 255;
+    if (p >= n) return { ok: false, error: "CheckFailed" };
+    const num = polyEval(omega, gfExp(i));
+    const den = polyDerEval(loc, gfExp(i));
     if (den === 0) return { ok: false, error: "CheckFailed" };
-    out[pos] ^= gfMul(gfDiv(num, den), gfExp(pos % n));
+    out[p] ^= gfMul(gfDiv(num, den), gfExp(p));
+    errs++;
   }
-  // Residual syndromes mean more errors than t.
-  for (let i = 0; i < 2 * t; i++) {
-    const x = gfExp(i);
+  if (errs > (t >> 1)) return { ok: false, error: "TooManyErrors" };
+  // Residual syndromes mean the correction failed (too many errors).
+  for (let j = 0; j < t; j++) {
+    const x = gfExp(j);
     let acc = 0;
     for (let k = n - 1; k >= 0; k--) acc = gfMul(acc, x) ^ out[k];
     if (acc !== 0) return { ok: false, error: "TooManyErrors" };
@@ -342,42 +436,35 @@ function sampleGrid(n, sample) {
   return mods;
 }
 
-// Read the mask from the format bits, retrying on the inverted phase when
-// the normal polarity doesn't verify (flashed white-on-black capture).
+// Read the mask from the format bits (best match over both copies),
+// retrying on the inverted phase when the normal polarity doesn't verify
+// (flashed white-on-black capture).
 function resolveMask(mods, n) {
-  let d5 = readFormatWord(mods, n, 0);
-  if (d5 < 0) d5 = readFormatWord(mods, n, 1);
+  let mask = bestFormatMask([readFormatWord(mods, n, 0), readFormatWord(mods, n, 1)]);
   let inverted = false;
-  if (d5 < 0) {
+  if (mask < 0) {
     for (let i = 0; i < mods.length; i++) mods[i] ^= 1;
     inverted = true;
-    d5 = readFormatWord(mods, n, 0);
-    if (d5 < 0) d5 = readFormatWord(mods, n, 1);
+    mask = bestFormatMask([readFormatWord(mods, n, 0), readFormatWord(mods, n, 1)]);
   }
-  if (d5 < 0) return { mask: -1, inverted };
-  return { mask: d5 & 7, inverted };
+  return { mask, inverted };
 }
 
-// Geometry (pitch + offsets) for a candidate version from the finder centers.
-function geometryForVersion(f, data, w, h, version) {
-  const { tl, tr, bl, estimated } = f;
+// Affine module-grid geometry from the three finder centers: module (r,c)
+// center = o + (c+0.5)*ux + (r+0.5)*uy. The step vectors ux/uy absorb
+// hand-held rotation and anisotropic scale, so a few degrees of tilt
+// decode exactly. (The pair pass places the estimated third finder at the
+// exact perpendicular spot, so all three centers exist either way.)
+function geometryForVersion(f, version) {
+  const { tl, tr, bl } = f;
   const n = 17 + 4 * version;
-  let pX, pY, oX, oY;
-  if (!estimated) {
-    pX = (tr.cx - tl.cx) / (n - 7);
-    pY = (bl.cy - tl.cy) / (n - 7);
-  } else if (tr !== null && bl === null) {
-    // TL + TR visible: square geometry → pY = pX.
-    pX = (tr.cx - tl.cx) / (n - 7);
-    pY = pX;
-  } else {
-    // TL + BL visible: square geometry → pX = pY.
-    pY = (bl.cy - tl.cy) / (n - 7);
-    pX = pY;
-  }
-  oX = tl.cx - 3.5 * pX; // left edge of module 0
-  oY = tl.cy - 3.5 * pY;
-  return { n, pX, pY, oX, oY };
+  const ux = { x: (tr.cx - tl.cx) / (n - 7), y: (tr.cy - tl.cy) / (n - 7) };
+  const uy = { x: (bl.cx - tl.cx) / (n - 7), y: (bl.cy - tl.cy) / (n - 7) };
+  const o = {
+    x: tl.cx - 3.5 * (ux.x + uy.x),
+    y: tl.cy - 3.5 * (ux.y + uy.y),
+  };
+  return { n, o, ux, uy };
 }
 
 // Pure entry: decode from a downscale pixel buffer (w x h, RGBA).
@@ -388,16 +475,16 @@ export function qrDecodeFromPixels(data, w, h) {
 
   // First pass: assume the chunk version (v13, N=69) to read the
   // version-info blocks; the version read corrects the assumption.
-  const g0 = geometryForVersion(f, data, w, h, 13);
-  const sample0 = makeSampler(data, w, h, g0.oX, g0.oY, g0.pX, g0.pY);
+  const g0 = geometryForVersion(f, 13);
+  const sample0 = makeSampler(data, w, h, g0);
   const vRead1 = readVersionWord(sample0, 17 + 4 * 13, 0);
   const vRead2 = vRead1 || readVersionWord(sample0, 17 + 4 * 13, 1);
   const versionInfoOk = vRead2 > 0;
 
   if (versionInfoOk) {
     const version = vRead2;
-    const g = geometryForVersion(f, data, w, h, version);
-    const sample = makeSampler(data, w, h, g.oX, g.oY, g.pX, g.pY);
+    const g = geometryForVersion(f, version);
+    const sample = makeSampler(data, w, h, g);
     const mods = sampleGrid(g.n, sample);
     const { mask, inverted } = resolveMask(mods, g.n);
     if (mask < 0) return { ok: false, error: "FormatBad" };
@@ -409,8 +496,8 @@ export function qrDecodeFromPixels(data, w, h) {
   // Version info unreadable: resample per candidate version until RS-decode
   // succeeds.
   for (const v of FALLBACK_VERSIONS) {
-    const g = geometryForVersion(f, data, w, h, v);
-    const sample = makeSampler(data, w, h, g.oX, g.oY, g.pX, g.pY);
+    const g = geometryForVersion(f, v);
+    const sample = makeSampler(data, w, h, g);
     const mods = sampleGrid(g.n, sample);
     const { mask, inverted } = resolveMask(mods, g.n);
     if (mask < 0) continue;
@@ -431,17 +518,6 @@ function decodeVersion(mods, n, version, mask) {
   }
   const bits = readZigzagBits(mods, reserved, n);
   if (bits.length === 0) return { ok: false, error: "NoDataBits" };
-
-  // Byte-mode prefix: 4-bit mode + 8-bit length (v<=9) or 16-bit (v>=10).
-  const prefixBits = 4 + (version <= 9 ? 8 : 16);
-  const dataBits = bits.slice(prefixBits);
-  const nBytes = Math.floor(dataBits.length / 8);
-  const bytes = new Uint8Array(nBytes);
-  for (let i = 0; i < nBytes; i++) {
-    let v = 0;
-    for (let j = 0; j < 8; j++) if (dataBits[i * 8 + j]) v |= 1 << (7 - j);
-    bytes[i] = v;
-  }
 
   // De-interleave into per-block data + EC codewords, RS-correct each.
   const row = VERSIONS[version - 1];
@@ -473,9 +549,11 @@ function decodeVersion(mods, n, version, mask) {
   }
   const payloadParts = [];
   for (let b = 0; b < defs.length; b++) {
+    // qrRsDecode expects [parity_0..t-1][data_0..] — parity occupies the
+    // low polynomial coefficients, matching qrRsParity's encode.
     const coded = new Uint8Array(defs[b] + t);
-    coded.set(dataBlocks[b], 0);
-    coded.set(ecBlocks[b], defs[b]);
+    coded.set(ecBlocks[b], 0);
+    coded.set(dataBlocks[b], t);
     const dec = qrRsDecode(coded, t);
     if (!dec.ok) return { ok: false, error: dec.error };
     payloadParts.push(dec.payload);
@@ -488,30 +566,58 @@ function decodeVersion(mods, n, version, mask) {
     off += p.length;
   }
 
-  const frame = parseFrame(dataBytes);
+  // Strip the QR byte-mode prefix (4-bit mode + 8/16-bit length) from the
+  // head of the data codewords: the PIXF frame starts right after it,
+  // mid-codeword (12 or 20 bits in), so slice at bit granularity.
+  const prefixBits = 4 + (version <= 9 ? 8 : 16);
+  const frameBits = [];
+  for (let i = 0; i < dataBytes.length; i++) {
+    for (let j = 7; j >= 0; j--) frameBits.push((dataBytes[i] >> j) & 1);
+  }
+  const nFrameBytes = Math.floor((frameBits.length - prefixBits) / 8);
+  const frameBytes = new Uint8Array(nFrameBytes);
+  for (let i = 0; i < nFrameBytes; i++) {
+    let v = 0;
+    for (let j = 0; j < 8; j++) if (frameBits[prefixBits + i * 8 + j]) v |= 1 << (7 - j);
+    frameBytes[i] = v;
+  }
+
+  const frame = parseFrame(frameBytes);
   if (!frame) return { ok: false, error: "HeaderBad" };
   return { ok: true, frame };
 }
 
 // ---------- DOM wrapper ----------
 
-// Decode a QR code from a live video frame: downscale (DS=4) then run the
-// pure pixel decode.
+// Decode a QR code from a live video frame. The frame is downscaled by a
+// factor of 4 first (fast path, handles a code that fills a healthy part
+// of the camera view); if that fails — e.g. the phone is far away and the
+// code is small — the same frame is retried at a factor of 2, which keeps
+// twice the detail in the decode buffer. The retry only costs time on
+// frames that already failed.
 export function qrDecodeVideo(video) {
   const vw = video.videoWidth || 640;
   const vh = video.videoHeight || 480;
-  const w = Math.max(2, (vw / DS) | 0);
-  const h = Math.max(2, (vh / DS) | 0);
-  let cv = qrDecodeVideo._cv;
+  const dec = decodeAtScale(video, vw, vh, 4);
+  if (dec.ok) return dec;
+  return decodeAtScale(video, vw, vh, 2);
+}
+
+function decodeAtScale(video, vw, vh, ds) {
+  const w = Math.max(2, (vw / ds) | 0);
+  const h = Math.max(2, (vh / ds) | 0);
+  let cv = decodeAtScale._cvs;
   if (!cv) {
-    cv = document.createElement("canvas");
-    qrDecodeVideo._cv = cv;
+    cv = [document.createElement("canvas"), document.createElement("canvas")];
+    decodeAtScale._cvs = cv;
   }
-  if (cv.width !== w || cv.height !== h) {
-    cv.width = w;
-    cv.height = h;
+  const idx = ds === 4 ? 0 : 1;
+  const c = cv[idx];
+  if (c.width !== w || c.height !== h) {
+    c.width = w;
+    c.height = h;
   }
-  const ctx = cv.getContext("2d", { willReadFrequently: true });
+  const ctx = c.getContext("2d", { willReadFrequently: true });
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(video, 0, 0, w, h);
   const d = ctx.getImageData(0, 0, w, h).data;

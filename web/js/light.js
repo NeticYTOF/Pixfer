@@ -95,6 +95,24 @@ export function sampleBlocks(video, opts = {}) {
 // cycle. Slow enough for camera exposure to resolve each phase cleanly.
 const FLASH_PHASE_MS = 50;
 
+// Quiet-zone width (modules) and the dark-module palette for QR output.
+// Palette colors are luminance-dark (gray < 128) AND strongly saturated
+// with a near-zero minimum channel, so the peer's camera classifies them
+// as dark even after gain/white-balance shifts (isDarkPixel in
+// qrdecode.js). Color carries no data — only the dark/light classification
+// matters — it makes the flashing code readable to the eye.
+export const QR_QUIET_MODULES = 4;
+export const QR_DARK_COLORS = [
+  [0, 0, 0], // black
+  [192, 0, 0], // red
+  [0, 144, 0], // green
+  [0, 0, 192], // blue
+  [192, 96, 0], // amber
+  [128, 0, 160], // purple
+  [0, 150, 150], // cyan
+  [160, 0, 160], // magenta
+];
+
 // Emit a block grid through a screen. The 270x480 grid is stretched to fill
 // the whole canvas (rectangular blocks), so the display uses the full box
 // instead of a letterboxed square. Repaint happens only when the blocks or
@@ -110,8 +128,9 @@ export function makeEmitter(canvas) {
   const pal = core.PALETTE;
   let blocksRef = null; // static (idle) blocks
   let flash = null; // { normal, inverse } when flashing a session frame
-  let flashQr = null; // { data (0/1 modules), size } when flashing a QR code
-  let phase = false; // false = normal (black-on-white), true = inverted
+  let flashQr = null; // { data (0/1 modules), size, rot } when flashing a QR code
+  let qrRot = 0; // per-QR palette rotation for the color cycle
+  let phase = false; // false = normal (colored-on-white), true = inverted
   let lastToggle = 0;
   let lastW = 0;
   let lastH = 0;
@@ -123,23 +142,41 @@ export function makeEmitter(canvas) {
     const h = canvas.height;
     if (w === 0 || h === 0) return;
     if (flashQr) {
-      // QR render: fillRect per module, fast. Normal phase = black modules
-      // on white; inverted phase = white modules on black (the flash).
+      // QR render: a centered square with a quiet zone — like a traditional
+      // QR code sitting on the screen, not a full-screen grid. Normal phase
+      // = dark modules in rotating palette colors on white; inverted phase
+      // = white modules on black (the flash).
       if (w === lastW && h === lastH && !dirty) return;
       lastW = w;
       lastH = h;
       dirty = false;
       const n = flashQr.size;
-      const mp = Math.max(1, (w / n) | 0);
+      const units = n + 2 * QR_QUIET_MODULES;
+      const mp = Math.max(1, Math.floor(Math.min(w, h) / units));
+      const box = mp * units;
+      const ox = Math.floor((w - box) / 2);
+      const oy = Math.floor((h - box) / 2);
       const bg = phase ? 0 : 255;
-      const fg = phase ? 255 : 0;
       ctx.fillStyle = `rgb(${bg},${bg},${bg})`;
       ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = `rgb(${fg},${fg},${fg})`;
       const data = flashQr.data;
+      const rot = flashQr.rot | 0;
+      const k = QR_DARK_COLORS.length;
       for (let r = 0; r < n; r++) {
         for (let c = 0; c < n; c++) {
-          if (data[r * n + c]) ctx.fillRect(c * mp, r * mp, mp, mp);
+          if (!data[r * n + c]) continue;
+          if (phase) {
+            ctx.fillStyle = "rgb(255,255,255)";
+          } else {
+            const col = QR_DARK_COLORS[(r * 7 + c * 11 + rot) % k];
+            ctx.fillStyle = `rgb(${col[0]},${col[1]},${col[2]})`;
+          }
+          ctx.fillRect(
+            ox + (c + QR_QUIET_MODULES) * mp,
+            oy + (r + QR_QUIET_MODULES) * mp,
+            mp,
+            mp
+          );
         }
       }
       return;
@@ -216,10 +253,12 @@ export function makeEmitter(canvas) {
     }
   }
 
-  // Flash an actual QR code: alternate black-on-white / white-on-black.
-  // `qr` = { data: Uint8Array of 0/1 modules, size: N }.
+  // Flash an actual QR code: alternate colored-on-white / white-on-black.
+  // `qr` = { data: Uint8Array of 0/1 modules, size: N }. Each new QR shifts
+  // the color rotation so consecutive frames cycle through the palette.
   function setQr(qr) {
-    flashQr = qr;
+    qrRot = (qrRot + 1) % QR_DARK_COLORS.length;
+    flashQr = { data: qr.data, size: qr.size, rot: qrRot };
     flash = null;
     phase = false;
     lastToggle = performance.now();
