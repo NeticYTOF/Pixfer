@@ -199,7 +199,8 @@ function contentChanges(a, b, nChunks) {
 
 function runScenario(name, opts, seconds = 2) {
   const rng = makeRng(opts.seed || 12345);
-  const frame = opts.frame || core.newFrame("Chunk", 4242, 7, 12, new Uint8Array(core.RS_K).fill(0x37));
+  const frame = opts.frame ||
+    core.newFrame("Chunk", 4242, 7, 12, new Uint8Array(opts.payloadLen || core.RS_K).fill(0x37));
   const qr = qrEncode(frame);
   const motion = makeMotion(opts.motion || "static");
   const fps = opts.fps || FPS;
@@ -393,6 +394,20 @@ test("camera sim: slow camera rescued by the suggested flash phase", () => {
     brightness: 0.85, exposureMs: 200, jitterPx: 3, seed: 1100, fps: 5, phaseMs: 800,
   }, 2);
   assert.ok(r.rate >= 0.35, `rate ${(r.rate * 100).toFixed(0)}% < 35%`);
+});
+
+test("camera sim: big 643 B frames (v20) survive a shaky camera", () => {
+  // The "big" preset: 2.9x the payload per frame in a v20 QR — 97 modules
+  // in the same box, so modules shrink ~30% and shake costs capture rate
+  // (measured ~36%/frame vs ~100% for v11 under the same shake). That is
+  // still a WORKING transfer: the numbered-frame loop recovers everything,
+  // chunks land in a pass at this rate, and a closer/steadier hand raises
+  // it fast. Threshold is the honest floor, not the comfortable case.
+  const r = runScenario("big-frames", {
+    payloadLen: 643, boxPx: 560, motion: "shake", blurSigma: 1.1, noiseSigma: 8, wb: [1.05, 1, 0.97],
+    brightness: 1.0, exposureMs: 15, jitterPx: 4, seed: 1200,
+  }, 1.2);
+  assert.ok(r.rate >= 0.3, `rate ${(r.rate * 100).toFixed(0)}% < 30%`);
 });
 
 test("camera sim: sender catches the receiver's Done reply", () => {

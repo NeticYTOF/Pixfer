@@ -29,11 +29,12 @@ import {
 const DS = 4; // downscale factor for detection
 
 // Every version the pixfer protocol can emit, most-likely first. Full
-// chunk frames (246 B) encode to v11; the short LAST chunk can land
-// anywhere from v10 down to v2 (a 1-byte payload is a 24-byte frame);
+// chunk frames: standard preset 246 B -> v11, big 666 B -> v20, max
+// 997 B -> v25 (the last chunk can land anywhere from v10 down to v2);
 // control frames are v2. Versions below 7 carry no version-info blocks,
-// so they can only be found through this list.
-const FALLBACK_VERSIONS = [11, 10, 9, 8, 7, 6, 5, 4, 3, 2];
+// so they can only be found through this list — and the big versions stay
+// on it as a rescue path when their version-info blocks are damaged.
+const FALLBACK_VERSIONS = [11, 20, 25, 10, 9, 8, 7, 6, 5, 4, 3, 2];
 
 // ---------- dark/light classification + connected components ----------
 

@@ -96,11 +96,12 @@ function roundTrip(frame) {
   check("validChunkMeta: full second-to-last chunk", core.validChunkMeta(3, 5, core.RS_K));
   check("validChunkMeta: short last chunk", core.validChunkMeta(4, 5, 1));
   check("validChunkMeta: short last chunk (RS_K)", core.validChunkMeta(4, 5, core.RS_K));
-  check("validChunkMeta: rejects short MID chunk", !core.validChunkMeta(1, 5, 10));
+  check("validChunkMeta: accepts big preset mid chunks (643 B)", core.validChunkMeta(1, 5, 643));
+  check("validChunkMeta: accepts max preset mid chunks (974 B)", core.validChunkMeta(1, 5, 974));
   check("validChunkMeta: rejects chunkIdx == total", !core.validChunkMeta(5, 5, core.RS_K));
   check("validChunkMeta: rejects negative index", !core.validChunkMeta(-1, 5, core.RS_K));
   check("validChunkMeta: rejects zero payload", !core.validChunkMeta(0, 5, 0));
-  check("validChunkMeta: rejects oversize payload", !core.validChunkMeta(0, 5, core.RS_K + 1));
+  check("validChunkMeta: rejects oversize payload", !core.validChunkMeta(0, 5, core.MAX_PAYLOAD_BYTES + 1));
   check("validChunkMeta: rejects zero total", !core.validChunkMeta(0, 0, core.RS_K));
   check(
     "validChunkMeta: rejects allocation bomb (1e12 chunks)",

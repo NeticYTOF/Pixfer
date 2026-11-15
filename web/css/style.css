@@ -165,6 +165,17 @@ body {
   text-align: center;
 }
 .flashset input:focus { outline: none; border-color: var(--accent); }
+.flashset select {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 6px;
+  text-align: center;
+}
+.flashset select:focus { outline: none; border-color: var(--accent); }
 
 /* ---------- stages ---------- */
 .stage { flex: 1; position: relative; overflow: hidden; }

@@ -176,6 +176,29 @@ function qrPixels(qr, pxPerModule = 8) {
     dec.ok && dec.frame.kind === "Chunk" && dec.frame.sessionId === 555 && dec.frame.payload[0] === 0x42);
 }
 
+// 7) Frame-size presets: the sender's "big" (v20, 643 B) and "max"
+// (v25, 974 B) frames round-trip through pixels like the standard ones.
+{
+  const presets = [
+    [643, 20],
+    [974, 25],
+  ];
+  for (const [pl, ver] of presets) {
+    const payload = new Uint8Array(pl);
+    for (let i = 0; i < pl; i++) payload[i] = (i * 29 + 7) & 0xff;
+    const frame = core.newFrame("Chunk", 8100, 2, 9, payload);
+    const qr = qrEncode(frame);
+    check(`big frame ${pl} B encodes to v${ver}`, qr.version === ver, `v=${qr.version} n=${qr.size}`);
+    const { data, w, h } = qrPixels(qr);
+    const dec = qrDecodeFromPixels(data, w, h);
+    check(`big frame ${pl} B decodes`, dec.ok, dec.error);
+    check(
+      `big frame ${pl} B payload is byte-exact`,
+      dec.ok && dec.frame.payload.length === pl && dec.frame.payload.every((v, i) => v === payload[i])
+    );
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {
   console.log("Failures:", failures.join(", "));

@@ -494,22 +494,27 @@ export const ZIP_THRESHOLD_S = 30;
 // allocate an unbounded array.
 export const MAX_TRANSFER_BYTES = 256 * 1024 * 1024;
 
+// Largest payload a sender preset can put in one QR frame (v25 at EC-M).
+// The receiver accepts chunk payloads up to this bound; content integrity
+// is guaranteed by the CRC32 in the header, so a corrupt length cannot pass.
+export const MAX_PAYLOAD_BYTES = 974;
+
 export function maxChunkCount() {
   return Math.ceil(MAX_TRANSFER_BYTES / RS_K);
 }
 
 // Validate a decoded Chunk frame's metadata before the receiver stores
-// it: index in range, sane payload size, bounded chunk count, and every
-// chunk except the last must be full-size (the sender only shortens the
-// last one).
+// it: index in range, sane payload size, bounded chunk count. Mid chunks
+// may carry any preset size (the sender picks 223/643/974 B frames);
+// corruption cannot forge a short "mid" chunk because the header CRC
+// covers the declared length.
 export function validChunkMeta(chunkIdx, totalChunks, payloadLen) {
   if (!Number.isInteger(chunkIdx) || !Number.isInteger(totalChunks) || !Number.isInteger(payloadLen)) {
     return false;
   }
   if (totalChunks < 1 || totalChunks > maxChunkCount()) return false;
   if (chunkIdx < 0 || chunkIdx >= totalChunks) return false;
-  if (payloadLen < 1 || payloadLen > RS_K) return false;
-  if (chunkIdx < totalChunks - 1 && payloadLen !== RS_K) return false;
+  if (payloadLen < 1 || payloadLen > MAX_PAYLOAD_BYTES) return false;
   return true;
 }
 

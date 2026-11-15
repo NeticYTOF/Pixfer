@@ -13,7 +13,7 @@
 
 import * as core from "./core.js";
 import { openCamera, makeEmitter, fitCanvas, keepScreenAwake, FLASH_PHASE_MS } from "./light.js";
-import { qrEncode } from "./qr.js";
+import { qrEncode, qrCapacityBytes } from "./qr.js";
 import { qrDecodeVideo } from "./qrdecode.js";
 
 // Default frame dwells in whole flash phases. The flash phase itself is
@@ -23,6 +23,20 @@ import { qrDecodeVideo } from "./qrdecode.js";
 export const PING_DWELL_MS = FLASH_PHASE_MS;
 export const CHUNK_DWELL_MS = FLASH_PHASE_MS * 2;
 const MAX_PASSES = 40; // safety cap if the receiver never flashes Done
+
+// Frame-size presets: more payload per QR = fewer frames for the same
+// file, traded against module size (bigger version = smaller modules =
+// the receiver must be closer/steadier). Payloads derive from the actual
+// table capacity at EC level M minus the 23-byte PIXF header, so they can
+// never drift from what the encoder can carry.
+export const FRAME_PRESETS = {
+  standard: { version: 11, label: "223 B/frame" },
+  big: { version: 20, label: "643 B/frame" },
+  max: { version: 25, label: "974 B/frame" },
+};
+function presetPayload(version) {
+  return qrCapacityBytes(version) - core.HEADER_BYTES;
+}
 
 export function mountTx(root, fflate, onBack) {
   const canvas = root.querySelector("#tx-canvas");
@@ -57,6 +71,8 @@ export function mountTx(root, fflate, onBack) {
   // whole phases at any setting
   let pingDwell = PING_DWELL_MS;
   let chunkDwell = CHUNK_DWELL_MS;
+  // frame size: the sender's data-per-frame setting (bigger QR versions)
+  let chunkSize = presetPayload(FRAME_PRESETS.standard.version);
   // Decode throttle for the camera callback (mirrors rx.js): decoding
   // every frame on a slow phone backs up the loop and drops more frames.
   let decodeStride = 1;
@@ -81,8 +97,8 @@ export function mountTx(root, fflate, onBack) {
 
   function chunkPayload(idx) {
     if (!data) return new Uint8Array(0);
-    const start = idx * core.RS_K;
-    const end = Math.min(data.length, start + core.RS_K);
+    const start = idx * chunkSize;
+    const end = Math.min(data.length, start + chunkSize);
     return data.subarray(start, end);
   }
 
@@ -159,7 +175,7 @@ export function mountTx(root, fflate, onBack) {
     } else {
       data = raw;
     }
-    totalChunks = Math.ceil(data.length / core.RS_K);
+    totalChunks = Math.ceil(data.length / chunkSize);
     if (totalChunks > core.maxChunkCount()) {
       setStatus("too big for this link — over " + (core.MAX_TRANSFER_BYTES / 1048576) + " MB even zipped");
       return;
@@ -167,25 +183,46 @@ export function mountTx(root, fflate, onBack) {
     if (!plan.shouldZip) {
       setStatus((file.size / 1048576).toFixed(2) + " MB, est. " + plan.estSeconds.toFixed(1) + "s, sending as-is");
     }
-    metaEl.textContent =
-      totalChunks + " frames · ~" +
-      ((pingDwell + totalChunks * chunkDwell) / 1000).toFixed(1) +
-      "s per pass";
     progressFill.style.width = "0%";
 
     if (myRun !== runToken) return; // superseded during read/zip — don't take over the loop
+    updateMeta();
+    if (releaseWake) releaseWake();
+    releaseWake = await keepScreenAwake();
+    if (myRun !== runToken) return; // superseded while acquiring the wake lock
+    startLoop();
+  });
+
+  function updateMeta() {
+    if (!totalChunks) {
+      metaEl.textContent = "";
+      return;
+    }
+    // bytes/second assumes the receiver catches at least one phase per frame
+    const bps = (chunkSize * 1000) / chunkDwell;
+    metaEl.textContent =
+      chunkSize + " B/frame · " + totalChunks + " frames · ~" +
+      ((pingDwell + totalChunks * chunkDwell) / 1000).toFixed(1) +
+      "s per pass · ~" + (bps / 1024).toFixed(1) + " KB/s";
+  }
+
+  function startLoop() {
+    if (!data || !totalChunks) return;
+    const myRun = ++runToken;
     stopLoop();
     pass = 0;
     cursor = -1;
     pongSeen = false;
     startedAt = performance.now();
-    const sessionId = (Math.random() * 0x10000) | 0;
-    session = core.newFrame("Ping", sessionId, 0, totalChunks, null);
+    // fresh session id: the receiver resets cleanly on the next Ping
+    // (new totalChunks), even for a mid-transfer size change
+    session = core.newFrame("Ping", (Math.random() * 0x10000) | 0, 0, totalChunks, null);
     looping = true;
-    if (releaseWake) releaseWake();
-    releaseWake = await keepScreenAwake();
-    if (myRun !== runToken) return; // superseded while acquiring the wake lock
+    bootCameraAndLoop(myRun);
+  }
 
+  async function bootCameraAndLoop(myRun) {
+    if (myRun !== runToken) return;
     if (!camHandle) {
       try {
         camHandle = await openCamera(camVideo, (video) => {
@@ -199,18 +236,16 @@ export function mountTx(root, fflate, onBack) {
           if (dec.ok) route(dec.frame);
         });
         if (myRun !== runToken) return; // superseded while opening the camera
-        stepLoop();
       } catch (e) {
         setStatus(
           "camera unavailable (" + e.message + ") — still sending, but the Done signal can't be seen." +
             (typeof window !== "undefined" && !window.isSecureContext ? " Camera needs https:// or localhost." : "")
         );
-        if (myRun === runToken) stepLoop(); // camera is optional in loop mode
+        // the camera is optional in loop mode — keep streaming
       }
-    } else {
-      stepLoop();
     }
-  });
+    if (myRun === runToken) stepLoop();
+  }
 
   const flashInput = root.querySelector("#tx-flash");
   flashInput.addEventListener("change", () => {
@@ -222,13 +257,27 @@ export function mountTx(root, fflate, onBack) {
     emitter.setFlashPhase(v);
     pingDwell = v; // 1 whole phase
     chunkDwell = v * 2; // 2 whole phases
-    if (totalChunks > 0) {
-      metaEl.textContent =
-        totalChunks + " frames · ~" +
-        ((pingDwell + totalChunks * chunkDwell) / 1000).toFixed(1) +
-        "s per pass";
-    }
+    updateMeta();
     setStatus("flash phase " + v + " ms — frames will show " + (v / 1000).toFixed(1) + "s per phase");
+  });
+
+  const sizeSel = root.querySelector("#tx-framesize");
+  sizeSel.addEventListener("change", () => {
+    const preset = FRAME_PRESETS[sizeSel.value] || FRAME_PRESETS.standard;
+    chunkSize = presetPayload(preset.version);
+    if (data && data.length > 0 && totalChunks > 0) {
+      // re-chunk the SAME file with the new size and restart the loop —
+      // a fresh session id makes the receiver reset cleanly on the next
+      // Ping; the pass counter and ETA update via updateMeta()
+      totalChunks = Math.ceil(data.length / chunkSize);
+      updateMeta();
+      startLoop();
+      setStatus(
+        "switched to " + chunkSize + " B/frame (" + totalChunks + " frames) — looping again"
+      );
+    } else {
+      setStatus("frame size " + chunkSize + " B — pick a file to send");
+    }
   });
 
   function route(f) {
