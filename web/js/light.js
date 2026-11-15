@@ -98,13 +98,13 @@ export function sampleBlocks(video, opts = {}) {
   return blocks;
 }
 
-// Blink period for flashing frames. 100 ms per phase → 10 phase changes
-// per second (a 5 Hz full blink cycle — still clearly flashing to the
-// eye). Real phone cameras have rolling shutters and dim-light frame
-// integration of 30-70 ms; at 10 flips/sec most exposures fit inside a
-// single phase, so captures stay decodable instead of blending the two
-// phases into a smear.
-export const FLASH_PHASE_MS = 100;
+// Blink period for flashing frames. 200 ms per phase → 5 phase changes
+// per second (a 2.5 Hz full blink cycle — still clearly flashing). Real
+// phone cameras have rolling shutters, auto-exposure that hunts the
+// blink, and dim-light frame integration of 30-70 ms; at 5 flips/sec the
+// exposure fits inside a single phase almost always, AE settles between
+// steps, and even 10 fps cameras catch 3+ clean frames per phase.
+export const FLASH_PHASE_MS = 200;
 
 // Quiet-zone width (modules) and the dark-module palette for QR output.
 // Palette colors are luminance-dark (gray < 128) AND strongly saturated

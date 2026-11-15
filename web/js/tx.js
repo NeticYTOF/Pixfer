@@ -16,12 +16,12 @@ import { openCamera, makeEmitter, fitCanvas, keepScreenAwake } from "./light.js"
 import { qrEncode } from "./qr.js";
 import { qrDecodeVideo } from "./qrdecode.js";
 
-// Per-frame flash times, multiples of the 100 ms flash phase. The ping
-// gets 2 phases, each chunk 3 phases (~9 camera frames at 30 fps) — the
+// Per-frame flash times, in whole flash phases (200 ms each). The ping
+// gets 1 phase, each chunk 2 phases (~12 camera frames at 30 fps) — the
 // real-device margin that keeps a pass from having to repeat. Exported
 // so the camera simulation stays in lockstep with the sender.
 export const PING_DWELL_MS = 200;
-export const CHUNK_DWELL_MS = 300;
+export const CHUNK_DWELL_MS = 400;
 const MAX_PASSES = 40; // safety cap if the receiver never flashes Done
 
 export function mountTx(root, fflate, onBack) {

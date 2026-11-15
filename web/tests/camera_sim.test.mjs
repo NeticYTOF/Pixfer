@@ -129,9 +129,12 @@ function kernel(sigma) {
   return out;
 }
 
-function renderDsBuffer(sampler, opts, rng, exposureBlend, ds) {
-  const w = CAM_W / ds;
-  const h = CAM_H / ds;
+function renderDsBuffer(
+  sampler, opts, rng, exposureBlend, ds,
+  originX = 0, originY = 0, bufW = CAM_W / ds, bufH = CAM_H / ds
+) {
+  const w = bufW;
+  const h = bufH;
   const out = new Uint8Array(w * h * 4);
   const { tbl, radius } = kernel(opts.blurSigma);
   const wb = opts.wb;
@@ -140,8 +143,8 @@ function renderDsBuffer(sampler, opts, rng, exposureBlend, ds) {
 
   for (let j = 0; j < h; j++) {
     for (let i = 0; i < w; i++) {
-      const camX = i * ds;
-      const camY = j * ds;
+      const camX = originX + i * ds;
+      const camY = originY + j * ds;
       let r = 0, g = 0, b = 0;
       // 2D gaussian in camera space, evaluated only at the DS grid
       // points (that is all the decoder ever sees)
@@ -204,6 +207,7 @@ function runScenario(name, opts, seconds = 2) {
   let invertedCatches = 0;
   let ds4 = 0;
   let ds2Rescues = 0;
+  let cropRescues = 0;
   const errors = {};
 
   for (let f = 0; f < frames; f++) {
@@ -242,7 +246,22 @@ function runScenario(name, opts, seconds = 2) {
       dec = qrDecodeFromPixels(buf2.data, buf2.w, buf2.h);
       d1 = process.hrtime.bigint();
       frameDecodeMs += Number(d1 - d0) / 1e6;
-      if (dec.ok) ds2Rescues++;
+      if (dec.ok) {
+        ds2Rescues++;
+      } else if (opts.tryCrop) {
+        // centered native-resolution crop (qrDecodeVideo's crop pass for
+        // streams too big for full-res decoding)
+        const side = Math.round(Math.min(CAM_W, CAM_H) * 0.55);
+        const bufC = renderDsBuffer(
+          sampler, simOpts, rng, exposureBlend, 1,
+          (CAM_W - side) / 2, (CAM_H - side) / 2, side, side
+        );
+        d0 = process.hrtime.bigint();
+        dec = qrDecodeFromPixels(bufC.data, bufC.w, bufC.h);
+        d1 = process.hrtime.bigint();
+        frameDecodeMs += Number(d1 - d0) / 1e6;
+        if (dec.ok) cropRescues++;
+      }
     }
     decodeMs += frameDecodeMs;
     if (frameDecodeMs > maxDecodeMs) maxDecodeMs = frameDecodeMs;
@@ -259,13 +278,14 @@ function runScenario(name, opts, seconds = 2) {
     rate: decodes / frames,
     cleanRate: cleanFrames > 0 ? decodes / cleanFrames : 0,
     avgDecodeMs: decodeMs / frames,
-    maxDecodeMs, invertedCatches, ds4, ds2Rescues, errors,
+    maxDecodeMs, invertedCatches, ds4, ds2Rescues, cropRescues, errors,
   };
   console.log(
     `${name}: ${decodes}/${frames} decode (${(result.rate * 100).toFixed(0)}%),` +
       ` clean frames ${cleanFrames} -> clean-rate ${(result.cleanRate * 100).toFixed(0)}%,` +
-      ` ds4 ${ds4} + ds2 rescues ${ds2Rescues},` +
-      ` avg decode ${result.avgDecodeMs.toFixed(1)}ms (max ${maxDecodeMs.toFixed(1)}ms),` +
+      ` ds4 ${ds4} + ds2 rescues ${ds2Rescues}` +
+      (opts.tryCrop ? ` + crop rescues ${cropRescues}` : "") +
+      `, avg decode ${result.avgDecodeMs.toFixed(1)}ms (max ${maxDecodeMs.toFixed(1)}ms),` +
       ` inverted catches ${invertedCatches}` +
       (Object.keys(errors).length ? `, errors: ${JSON.stringify(errors)}` : "")
   );
@@ -308,18 +328,31 @@ test("camera sim: far away — small code rescued by the DS=2 retry", () => {
 test("camera sim: phone-to-phone distance (tiny code in view)", () => {
   // Phone-to-phone reality: the sender's screen is small, so at holding
   // distance the QR covers only ~20% of the camera frame — modules land
-  // near 2 px in the DS=2 buffer. This is the harsh edge: a partial
-  // per-frame decode rate is fine, because every frame is numbered and
-  // the loop brings back whatever is missed (9 frames per chunk at this
-  // rate still lands each chunk in one pass ~95% of the time). Real
-  // 720p cameras also run the full-res pass this sim cannot model, so
-  // production does better than the number here.
+  // near 2 px in the DS=2 buffer. This scenario documents the coarse-scale
+  // floor WITHOUT the crop pass: a partial per-frame rate is still fine,
+  // because every frame is numbered and the loop brings back what is
+  // missed. Production additionally runs the full-res pass (720p) or the
+  // centered crop pass (1080p) — see the crop-rescue scenario.
   const r = runScenario("far-phone", {
     boxPx: 260, motion: "static", rot: 0, blurSigma: 0.8, noiseSigma: 6, wb: [1, 1, 1],
     brightness: 1.0, exposureMs: 15, jitterPx: 2, seed: 909,
   }, 1);
   assert.ok(r.rate >= 0.2, `rate ${(r.rate * 100).toFixed(0)}% < 20%`);
   assert.ok(r.ds2Rescues > 0, "expected the fine-scale pass to rescue tiny-code frames");
+});
+
+test("camera sim: tiny code rescued by the centered crop pass", () => {
+  // Extreme distance: modules land at ~1.4 px in the DS=2 buffer — below
+  // what any full-frame pass can read. The centered square crop at native
+  // resolution — where the viewfinder brackets put the code — still
+  // resolves the modules (this is the pass 1080p phones run when their
+  // full-res frame exceeds the decode budget).
+  const r = runScenario("crop-rescue", {
+    boxPx: 200, motion: "static", rot: 0, blurSigma: 0.8, noiseSigma: 6, wb: [1, 1, 1],
+    brightness: 1.0, exposureMs: 15, jitterPx: 2, seed: 909, tryCrop: true,
+  }, 0.7);
+  assert.ok(r.rate >= 0.5, `rate ${(r.rate * 100).toFixed(0)}% < 50%`);
+  assert.ok(r.cropRescues > 0, "expected the centered crop pass to rescue tiny-code frames");
 });
 
 test("camera sim: hand shake — drift, tremor, rotation wobble", () => {

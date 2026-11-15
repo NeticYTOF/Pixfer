@@ -204,11 +204,16 @@ export function detectFinders(data, w, h) {
 // ---------- pure decode: RGBA pixels → pixfer frame ----------
 
 // Sample one module (r, c) through the affine grid g = { o, ux, uy }.
+// Reads the single pixel at the module center — at phone-to-phone
+// distance modules land at 2-4 px, where any wider footprint crosses
+// module boundaries and mixes neighbours (measured: 4-sample averaging
+// zeroed the 2.9 px-module decode rate). Math.round centers the sample
+// instead of the half-pixel floor bias.
 function makeSampler(data, w, h, g) {
   const { o, ux, uy } = g;
   return (modRow, modCol) => {
-    const x = Math.max(0, Math.min(w - 1, (o.x + (modCol + 0.5) * ux.x + (modRow + 0.5) * uy.x) | 0));
-    const y = Math.max(0, Math.min(h - 1, (o.y + (modCol + 0.5) * ux.y + (modRow + 0.5) * uy.y) | 0));
+    const x = Math.max(0, Math.min(w - 1, Math.round(o.x + (modCol + 0.5) * ux.x + (modRow + 0.5) * uy.x)));
+    const y = Math.max(0, Math.min(h - 1, Math.round(o.y + (modCol + 0.5) * ux.y + (modRow + 0.5) * uy.y)));
     const idx = (y * w + x) * 4;
     return isDarkPixel(data[idx], data[idx + 1], data[idx + 2]) ? 1 : 0;
   };
@@ -641,12 +646,43 @@ export function qrDecodeVideo(video) {
   const vw = video.videoWidth || 640;
   const vh = video.videoHeight || 480;
   let dec = { ok: false, error: "NoDecode" };
+  let ranFullRes = false;
   for (const ds of [4, 2, 1]) {
     if ((vw / ds) * (vh / ds) > 1200000) continue;
+    if (ds === 1) ranFullRes = true;
     dec = decodeAtScale(video, vw, vh, ds);
     if (dec.ok) return dec;
   }
+  // Big streams (1080p) skipped the full-res pass under the buffer cap:
+  // decode a centered square crop at native resolution instead. The
+  // viewfinder brackets guide the user to center the code, so a small QR
+  // still lands in the crop with full module detail at a fraction of the
+  // pixel cost (~350k px for 1080p).
+  if (!ranFullRes) {
+    dec = decodeAtCenterCrop(video, vw, vh);
+    if (dec.ok) return dec;
+  }
   return dec;
+}
+
+function decodeAtCenterCrop(video, vw, vh) {
+  const side = Math.max(2, Math.round(Math.min(vw, vh) * 0.55));
+  const x0 = ((vw - side) / 2) | 0;
+  const y0 = ((vh - side) / 2) | 0;
+  let cv = decodeAtCenterCrop._cv;
+  if (!cv) {
+    cv = document.createElement("canvas");
+    decodeAtCenterCrop._cv = cv;
+  }
+  if (cv.width !== side || cv.height !== side) {
+    cv.width = side;
+    cv.height = side;
+  }
+  const ctx = cv.getContext("2d", { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(video, x0, y0, side, side, 0, 0, side, side);
+  const d = ctx.getImageData(0, 0, side, side).data;
+  return qrDecodeFromPixels(d, side, side);
 }
 
 const scaleCanvases = new Map();

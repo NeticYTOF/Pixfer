@@ -155,7 +155,7 @@ body {
   padding: 24px 20px calc(24px + env(safe-area-inset-bottom));
 }
 #tx-view .light-canvas {
-  width: min(78vmin, 460px);
+  width: min(92vmin, 560px);
   aspect-ratio: 1;
   background: #000;
   border: 1px solid var(--line);
@@ -163,13 +163,13 @@ body {
   box-shadow: var(--shadow);
 }
 #tx-view .status {
-  max-width: min(78vmin, 460px);
+  max-width: min(92vmin, 560px);
   text-align: center;
   color: var(--muted);
   font-size: 14px;
   min-height: 1.5em;
 }
-#tx-view .progress { width: min(78vmin, 460px); }
+#tx-view .progress { width: min(92vmin, 560px); }
 #tx-view .cam-preview {
   position: absolute;
   right: 16px;
