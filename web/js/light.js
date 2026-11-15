@@ -29,7 +29,14 @@ export async function openCamera(video, onFrame) {
   let stopped = false;
   const tick = () => {
     if (stopped) return;
-    onFrame(video);
+    // A decode bug must never kill the capture loop: an exception in the
+    // frame callback would otherwise skip the re-request below and the
+    // preview freezes on the last frame with no way back.
+    try {
+      onFrame(video);
+    } catch (e) {
+      console.error("pixfer: camera frame handler error", e);
+    }
     if (typeof video.requestVideoFrameCallback === "function") {
       video.requestVideoFrameCallback(tick);
     } else {

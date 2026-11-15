@@ -67,7 +67,6 @@ export function mountRx(root, fflate, onBack) {
   let decodeStride = 1;
   let frameTick = 0;
   let failStreak = 0;
-  let showedRes = false;
   // Measure the DELIVERED frame rate — phones silently drop to 10-15 fps
   // in dim rooms (long exposure per frame). The status names the exact
   // flash value for the user to type on the sender while nothing is
@@ -109,18 +108,12 @@ export function mountRx(root, fflate, onBack) {
         route(dec.frame);
       } else {
         failStreak++;
-        if (!session) {
-          if (!showedRes && !fpsShown) {
-            showedRes = true;
-            statusEl.textContent =
-              "camera " + v.videoWidth + "×" + v.videoHeight + " — fill the square with the sender's QR";
-          } else if (failStreak === 30) {
-            // ~1 s without a decode: give the user a specific, actionable hint
-            statusEl.textContent =
-              dec.error === "FindersNotFound"
-                ? "no QR in view — move closer and fill the square"
-                : "I can see a code but can't read it — hold steadier, get closer, or tap lock exposure";
-          }
+        if (!session && failStreak === 30) {
+          // ~1 s without a decode: give the user a specific, actionable hint
+          statusEl.textContent =
+            dec.error === "FindersNotFound"
+              ? "no QR in view — move closer and fill the square"
+              : "I can see a code but can't read it — hold steadier, get closer, or tap lock exposure";
         }
       }
     })
