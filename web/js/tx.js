@@ -1,15 +1,21 @@
 // TX: pick a file, auto-zip when the estimated transfer time exceeds the
-// 30s threshold, chunk into 223-byte payloads, and transmit with
-// stop-and-wait ARQ. This side flashes ACTUAL QR codes (black/white,
-// standard QR format with Reed-Solomon FEC) and reads Pong/Ack/Nak QR
-// codes from the peer's screen with its camera.
+// 30s threshold, chunk into 223-byte payloads, and transmit in LOOP MODE:
+// the sender round-robins Ping → Chunk 0 → … → Chunk N-1 → Ping (repeat),
+// flashing each frame for a fixed dwell. No per-chunk stop-and-wait: any
+// frame the receiver misses (shake, blur, off-screen) comes around again
+// on the next pass. Each QR carries the chunk index + total in its header,
+// so the receiver always knows exactly which frames it is missing. The
+// receiver flashes a Done QR once it has every chunk; seeing Done stops
+// the loop.
 
 import * as core from "./core.js";
 import { openCamera, makeEmitter, fitCanvas } from "./light.js";
 import { qrEncode } from "./qr.js";
 import { qrDecodeVideo } from "./qrdecode.js";
 
-const ACK_TIMEOUT_MS = 2500;
+const PING_DWELL_MS = 250; // must be a multiple of the 50 ms flash phase
+const CHUNK_DWELL_MS = 300;
+const MAX_PASSES = 40; // safety cap if the receiver never flashes Done
 
 export function mountTx(root, fflate, onBack) {
   const canvas = root.querySelector("#tx-canvas");
@@ -32,11 +38,61 @@ export function mountTx(root, fflate, onBack) {
   let session = null;
   let data = null;
   let totalChunks = 0;
-  let ackTimer = null;
+  let dwellTimer = null;
   let camHandle = null;
+  let looping = false;
+  let pass = 0;
+  let cursor = -1; // -1 = ping phase, 0..N-1 = chunk frames
 
   function setStatus(t) {
     statusEl.textContent = t;
+  }
+
+  function stopLoop() {
+    looping = false;
+    if (dwellTimer) clearTimeout(dwellTimer);
+    dwellTimer = null;
+  }
+
+  function chunkPayload(idx) {
+    if (!data) return new Uint8Array(0);
+    const start = idx * core.RS_K;
+    const end = Math.min(data.length, start + core.RS_K);
+    return data.subarray(start, end);
+  }
+
+  function frameForCursor() {
+    if (cursor < 0) return core.newFrame("Ping", session.sessionId, 0, totalChunks, null);
+    const f = core.newFrame("Chunk", session.sessionId, cursor, totalChunks, null);
+    f.payload = chunkPayload(cursor);
+    return f;
+  }
+
+  // Flash the current frame for its dwell, then advance the cursor.
+  function stepLoop() {
+    if (!looping) return;
+    const f = frameForCursor();
+    emitter.setQr(qrEncode(f));
+    if (cursor < 0) {
+      setStatus("loop pass " + (pass + 1) + " — waiting for receiver…");
+    } else {
+      setStatus("pass " + (pass + 1) + " — flashing frame " + (cursor + 1) + "/" + totalChunks);
+      progressFill.style.width = (((cursor + 1) / totalChunks) * 100) + "%";
+    }
+    dwellTimer = setTimeout(() => {
+      if (!looping) return;
+      cursor++;
+      if (cursor >= totalChunks) {
+        cursor = -1;
+        pass++;
+        if (pass >= MAX_PASSES) {
+          stopLoop();
+          setStatus("gave up after " + MAX_PASSES + " passes — no Done from receiver");
+          return;
+        }
+      }
+      stepLoop();
+    }, cursor < 0 ? PING_DWELL_MS : CHUNK_DWELL_MS);
   }
 
   fileInput.addEventListener("change", async () => {
@@ -66,77 +122,42 @@ export function mountTx(root, fflate, onBack) {
     }
     totalChunks = Math.ceil(data.length / core.RS_K);
     const sessionId = (Math.random() * 0x10000) | 0;
-    session = core.TransferSession.tx(sessionId, totalChunks);
-    metaEl.textContent = totalChunks + " chunks";
+    session = core.newFrame("Ping", sessionId, 0, totalChunks, null);
+    metaEl.textContent = totalChunks + " frames";
     progressFill.style.width = "0%";
+
+    stopLoop();
+    pass = 0;
+    cursor = -1;
+    looping = true;
 
     if (!camHandle) {
       try {
         camHandle = await openCamera(camVideo, (video) => {
-          // Read the peer's flashed QR codes (Pong/Ack/Nak).
+          // Read the receiver's flashed QR codes (Pong / Done).
           const dec = qrDecodeVideo(video);
           if (dec.ok) route(dec.frame);
         });
-        pump();
+        stepLoop();
       } catch (e) {
         setStatus("camera: " + e.message);
       }
     } else {
-      pump();
+      stepLoop();
     }
   });
 
   function route(f) {
-    if (!session) return;
     if (f.kind === "Pong") {
-      session.onPong();
-      pump();
-    } else if (f.kind === "Ack") {
-      clearTimeout(ackTimer);
-      session.onAck(f.chunkIdx);
-      progressFill.style.width = (((f.chunkIdx + 1) / totalChunks) * 100) + "%";
-      metaEl.textContent = "chunk " + (f.chunkIdx + 1) + "/" + totalChunks;
-      pump();
-    } else if (f.kind === "Nak") {
-      clearTimeout(ackTimer);
-      session.onNak(f.chunkIdx);
-      pump();
-    }
-  }
-
-  function chunkPayload(idx) {
-    if (!data) return new Uint8Array(0);
-    const start = idx * core.RS_K;
-    const end = Math.min(data.length, start + core.RS_K);
-    return data.subarray(start, end);
-  }
-
-  function pump() {
-    if (!session) return;
-    const f = session.nextFrame();
-    if (!f) {
-      setStatus("done — all chunks acked");
-      return;
-    }
-    if (f.kind === "Chunk") {
-      f.payload = chunkPayload(f.chunkIdx);
-      emitter.setQr(qrEncode(f)); // flash an actual QR code (black/white)
-      clearTimeout(ackTimer);
-      ackTimer = setTimeout(onAckTimeout, ACK_TIMEOUT_MS);
-    } else {
-      emitter.setQr(qrEncode(f)); // flash Ping/End as QR too
-    }
-  }
-
-  function onAckTimeout() {
-    if (!session || session.state !== "AwaitingAck") return;
-    const r = session.onTimeout();
-    if (r) {
-      r.payload = chunkPayload(r.chunkIdx);
-      emitter.setQr(qrEncode(r));
-      ackTimer = setTimeout(onAckTimeout, ACK_TIMEOUT_MS);
-    } else {
-      setStatus("no ack — transfer failed after retries");
+      setStatus("receiver is listening — looping frames…");
+    } else if (f.kind === "Done") {
+      if (session && f.sessionId === session.sessionId) {
+        stopLoop();
+        progressFill.style.width = "100%";
+        metaEl.textContent = "done";
+        setStatus("done — receiver confirmed every frame");
+        emitter.setBlocks(new Uint8Array(core.GRID_W * core.GRID_H).fill(7));
+      }
     }
   }
 
@@ -146,8 +167,8 @@ export function mountTx(root, fflate, onBack) {
   });
 
   function stop() {
+    stopLoop();
     emitter.stop();
-    if (ackTimer) clearTimeout(ackTimer);
     if (camHandle) {
       camHandle.stop();
       camHandle = null;

@@ -60,8 +60,9 @@ export const FRAME_KIND = Object.freeze({
   Ack: 3,
   Nak: 4,
   End: 5,
+  Done: 6, // loop mode: receiver has every chunk — sender may stop flashing
 });
-const KIND_NAMES = ["Ping", "Pong", "Chunk", "Ack", "Nak", "End"];
+const KIND_NAMES = ["Ping", "Pong", "Chunk", "Ack", "Nak", "End", "Done"];
 
 export function frameKindFromU8(v) {
   return v >= 0 && v < KIND_NAMES.length ? KIND_NAMES[v] : null;

@@ -1,12 +1,16 @@
-// RX: open the camera, decode the peer's flashed QR codes, reassemble
-// chunks, auto-unzip zipped payloads, and download the file. This side
-// flashes actual QR codes (Pong/Ack/Nak) on its own screen for the peer's
-// camera.
+// RX: open the camera, decode the sender's looping QR frames, reassemble
+// chunks by their frame number (each QR header carries chunkIdx +
+// totalChunks, so the receiver always knows exactly which frames it is
+// missing and just waits for the loop to bring them around again),
+// auto-unzip zipped payloads, download the file, and flash a Done QR
+// until the sender stops.
 
 import * as core from "./core.js";
 import { openCamera, makeEmitter, fitCanvas } from "./light.js";
 import { qrEncode } from "./qr.js";
 import { qrDecodeVideo } from "./qrdecode.js";
+
+const PONG_DWELL_MS = 400;
 
 export function mountRx(root, fflate, onBack) {
   const video = root.querySelector("#rx-video");
@@ -25,8 +29,10 @@ export function mountRx(root, fflate, onBack) {
   const emitter = makeEmitter(emitCanvas);
   // Idle screen: full-white grid (all blocks 7).
   emitter.setBlocks(new Uint8Array(core.GRID_W * core.GRID_H).fill(7));
+  let pongTimer = null;
 
   let session = null;
+  let sessionId = -1;
   let chunks = [];
   let totalChunks = 0;
   let totalBytes = 0;
@@ -34,20 +40,11 @@ export function mountRx(root, fflate, onBack) {
   let camHandle = null;
 
   openCamera(video, (v) => {
-    drawCam(v, camCanvas);
-    // Decode the peer's flashed QR codes (actual QR, black/white).
-    const dec = qrDecodeVideo(v);
-    if (dec.ok) {
-      route(dec.frame, true);
-    } else if (session && totalChunks > 0) {
-      // A captured frame failed to decode (loss/corruption past the RS
-      // correction bound). NAK the lowest chunk we have not received yet,
-      // so the sender retransmits it — that is how lost packets are recovered.
-      session.onChunkErr(lowestMissing());
-      const nf = session.nextFrame();
-      if (nf) emitter.setQr(qrEncode(nf));
-    }
-  })
+      drawCam(v, camCanvas);
+      // Decode the sender's looping frames (actual QR, colored flash).
+      const dec = qrDecodeVideo(v);
+      if (dec.ok) route(dec.frame);
+    })
     .then((h) => {
       camHandle = h;
     })
@@ -55,12 +52,10 @@ export function mountRx(root, fflate, onBack) {
       statusEl.textContent = "camera: " + e.message;
     });
 
-  // Lowest chunk index not yet received (for NAKing lost frames).
-  function lowestMissing() {
-    for (let i = 0; i < totalChunks; i++) {
-      if (!chunks[i]) return i;
-    }
-    return 0;
+  function missingList() {
+    const out = [];
+    for (let i = 0; i < totalChunks; i++) if (!chunks[i]) out.push(i);
+    return out;
   }
 
   function drawCam(v, canvas) {
@@ -78,39 +73,52 @@ export function mountRx(root, fflate, onBack) {
     ctx.drawImage(v, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
   }
 
-  function ensureSession(sessionId, total) {
-    if (!session || session.sessionId !== sessionId) {
-      totalChunks = total;
-      chunks = new Array(total).fill(null);
-      totalBytes = 0;
-      session = core.TransferSession.rx(sessionId, totalChunks);
-    }
+  function flashBriefly(frame) {
+    emitter.setQr(qrEncode(frame));
+    if (pongTimer) clearTimeout(pongTimer);
+    pongTimer = setTimeout(() => {
+      // back to the plain idle screen so the loop keeps decoding cleanly
+      emitter.setBlocks(new Uint8Array(core.GRID_W * core.GRID_H).fill(7));
+    }, PONG_DWELL_MS);
   }
 
-  function route(f, ok) {
+  function ensureSession(sid, total) {
+    if (session && sessionId === sid) return;
+    sessionId = sid;
+    totalChunks = total;
+    chunks = new Array(total).fill(null);
+    totalBytes = 0;
+    finished = false;
+    session = core.newFrame("Pong", sid, 0, total, null);
+    statusEl.textContent = "sender detected — " + total + " frames, collecting…";
+  }
+
+  function route(f) {
     if (finished) return;
     if (f.kind === "Ping") {
       ensureSession(f.sessionId, f.totalChunks);
-      const nf = session.nextFrame();
-      if (nf) emitter.setQr(qrEncode(nf)); // flash the Pong as an actual QR
+      flashBriefly(core.newFrame("Pong", f.sessionId, 0, f.totalChunks, null));
     } else if (f.kind === "Chunk") {
       ensureSession(f.sessionId, f.totalChunks);
-      if (ok) {
-        if (!chunks[f.chunkIdx]) totalBytes += f.payload.length;
+      if (!chunks[f.chunkIdx]) {
         chunks[f.chunkIdx] = f.payload;
-        session.onChunkOk(f.chunkIdx);
-      } else {
-        session.onChunkErr(f.chunkIdx);
+        totalBytes += f.payload.length;
       }
-      const nf = session.nextFrame();
-      if (nf) emitter.setQr(qrEncode(nf)); // flash the Ack/Nak as an actual QR
       const got = chunks.filter(Boolean).length;
       if (totalChunks > 0) {
         progressFill.style.width = (got / totalChunks) * 100 + "%";
       }
-      if (session.allReceived() && chunks.every(Boolean)) finish();
-    } else if (f.kind === "End") {
-      if (session && session.allReceived()) finish();
+      if (got < totalChunks) {
+        // frame numbers make the losses visible: list up to 12 missing
+        const missing = missingList();
+        const shown = missing.slice(0, 12).map((i) => i + 1).join(", ");
+        statusEl.textContent =
+          got + "/" + totalChunks + " frames — waiting for " +
+          (missing.length > 12 ? shown + ", …" : shown) +
+          " to come around again";
+      } else {
+        finish();
+      }
     }
   }
 
@@ -136,6 +144,9 @@ export function mountRx(root, fflate, onBack) {
       downloadBlob(new Blob([out], { type: "application/octet-stream" }), "pixfer-file.bin");
       statusEl.textContent = "saved";
     }
+    // Tell the sender to stop: keep flashing Done until it reacts.
+    if (pongTimer) clearTimeout(pongTimer);
+    emitter.setQr(qrEncode(core.newFrame("Done", sessionId, 0, totalChunks, null)));
   }
 
   function isZip(b) {
@@ -183,6 +194,7 @@ export function mountRx(root, fflate, onBack) {
 
   function stop() {
     emitter.stop();
+    if (pongTimer) clearTimeout(pongTimer);
     if (camHandle) {
       camHandle.stop();
       camHandle = null;
