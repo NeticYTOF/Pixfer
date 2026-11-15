@@ -12,16 +12,16 @@
 // just cannot see the receiver's Done, so it stops at MAX_PASSES).
 
 import * as core from "./core.js";
-import { openCamera, makeEmitter, fitCanvas, keepScreenAwake } from "./light.js";
+import { openCamera, makeEmitter, fitCanvas, keepScreenAwake, FLASH_PHASE_MS } from "./light.js";
 import { qrEncode } from "./qr.js";
 import { qrDecodeVideo } from "./qrdecode.js";
 
-// Per-frame flash times, in whole flash phases (200 ms each). The ping
-// gets 1 phase, each chunk 2 phases (~12 camera frames at 30 fps) — the
-// real-device margin that keeps a pass from having to repeat. Exported
-// so the camera simulation stays in lockstep with the sender.
-export const PING_DWELL_MS = 200;
-export const CHUNK_DWELL_MS = 400;
+// Default frame dwells in whole flash phases. The flash phase itself is
+// settable at runtime (#tx-flash): slow cameras integrate long exposures,
+// and the receiver's status names the exact ms to type. Exported so the
+// camera simulation stays in lockstep with the sender's defaults.
+export const PING_DWELL_MS = FLASH_PHASE_MS;
+export const CHUNK_DWELL_MS = FLASH_PHASE_MS * 2;
 const MAX_PASSES = 40; // safety cap if the receiver never flashes Done
 
 export function mountTx(root, fflate, onBack) {
@@ -53,6 +53,10 @@ export function mountTx(root, fflate, onBack) {
   let pongSeen = false;
   let startedAt = 0;
   let releaseWake = null;
+  // live frame timing — derived from the flash phase so every frame shows
+  // whole phases at any setting
+  let pingDwell = PING_DWELL_MS;
+  let chunkDwell = CHUNK_DWELL_MS;
 
   function setStatus(t) {
     statusEl.textContent = t;
@@ -112,7 +116,7 @@ export function mountTx(root, fflate, onBack) {
         }
       }
       stepLoop();
-    }, cursor < 0 ? PING_DWELL_MS : CHUNK_DWELL_MS);
+    }, cursor < 0 ? pingDwell : chunkDwell);
   }
 
   fileInput.addEventListener("change", async () => {
@@ -156,7 +160,7 @@ export function mountTx(root, fflate, onBack) {
     }
     metaEl.textContent =
       totalChunks + " frames · ~" +
-      ((PING_DWELL_MS + totalChunks * CHUNK_DWELL_MS) / 1000).toFixed(1) +
+      ((pingDwell + totalChunks * chunkDwell) / 1000).toFixed(1) +
       "s per pass";
     progressFill.style.width = "0%";
 
@@ -189,6 +193,25 @@ export function mountTx(root, fflate, onBack) {
     } else {
       stepLoop();
     }
+  });
+
+  const flashInput = root.querySelector("#tx-flash");
+  flashInput.addEventListener("change", () => {
+    // The receiver names this number when its camera is slow — typing it
+    // here lengthens the flash so long exposures stop blending phases.
+    const raw = Number(flashInput.value);
+    const v = Number.isFinite(raw) ? Math.max(100, Math.min(4000, Math.round(raw))) : FLASH_PHASE_MS;
+    flashInput.value = v;
+    emitter.setFlashPhase(v);
+    pingDwell = v; // 1 whole phase
+    chunkDwell = v * 2; // 2 whole phases
+    if (totalChunks > 0) {
+      metaEl.textContent =
+        totalChunks + " frames · ~" +
+        ((pingDwell + totalChunks * chunkDwell) / 1000).toFixed(1) +
+        "s per pass";
+    }
+    setStatus("flash phase " + v + " ms — frames will show " + (v / 1000).toFixed(1) + "s per phase");
   });
 
   function route(f) {

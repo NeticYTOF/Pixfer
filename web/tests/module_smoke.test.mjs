@@ -50,7 +50,7 @@ test("index.html carries every id the views query", async () => {
   const ids = [
     "landing", "btn-tx", "btn-rx",
     "tx-view", "tx-canvas", "tx-camera", "tx-status", "tx-meta", "tx-progress",
-    "tx-file", "tx-filename", "tx-back",
+    "tx-file", "tx-filename", "tx-flash", "tx-back",
     "rx-view", "rx-video", "rx-canvas", "rx-emit", "rx-status", "rx-progress",
     "rx-lock", "rx-back",
   ];

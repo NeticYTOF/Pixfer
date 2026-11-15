@@ -19,6 +19,14 @@ import { qrDecodeVideo } from "./qrdecode.js";
 const PONG_DWELL_MS = 400;
 const DONE_FLASH_MS = 30000; // stop flashing Done after this; the sender has seen it or is gone
 
+// Exposure stretches toward the frame period in dim rooms; a phase of
+// ~4 frame periods keeps most capture windows inside a single flash
+// phase, so captures stop blending into a smear.
+function suggestFlashPhase(fps) {
+  const v = Math.ceil((4 * 1000) / Math.max(1, fps) / 100) * 100;
+  return Math.max(200, Math.min(4000, v));
+}
+
 export function mountRx(root, fflate, onBack) {
   const video = root.querySelector("#rx-video");
   const camCanvas = root.querySelector("#rx-canvas");
@@ -60,8 +68,36 @@ export function mountRx(root, fflate, onBack) {
   let frameTick = 0;
   let failStreak = 0;
   let showedRes = false;
+  // Measure the DELIVERED frame rate — phones silently drop to 10-15 fps
+  // in dim rooms (long exposure per frame). The status names the exact
+  // flash value for the user to type on the sender while nothing is
+  // decoding yet; once a session starts, route() owns the status line.
+  let fpsMark = 0;
+  let fpsCount = 0;
   openCamera(video, (v) => {
       drawCam(v, camCanvas);
+      if (!fpsMark) fpsMark = performance.now();
+      fpsCount++;
+      if (fpsCount >= 12) {
+        const measured = Math.round((fpsCount * 1000) / (performance.now() - fpsMark));
+        fpsMark = performance.now();
+        fpsCount = 0;
+        if (!session) {
+          const suggested = suggestFlashPhase(measured);
+          if (measured < 20 && suggested > 200) {
+            statusEl.textContent =
+              "camera only ~" + measured + " fps — set flash to " + suggested +
+              " ms in the sender's flash box";
+          } else if (measured < 20) {
+            statusEl.textContent =
+              "camera only ~" + measured + " fps — dim room? brighten it — fill the square with the sender's QR";
+          } else {
+            statusEl.textContent =
+              "camera " + v.videoWidth + "×" + v.videoHeight + " @ " + measured +
+              " fps — fill the square with the sender's QR";
+          }
+        }
+      }
       frameTick++;
       if (frameTick % decodeStride !== 0) return;
       const t0 = performance.now();
@@ -74,12 +110,12 @@ export function mountRx(root, fflate, onBack) {
       } else {
         failStreak++;
         if (!session) {
-          if (!showedRes) {
+          if (!showedRes && !fpsShown) {
             showedRes = true;
             statusEl.textContent =
               "camera " + v.videoWidth + "×" + v.videoHeight + " — fill the square with the sender's QR";
-          } else if (failStreak === 45) {
-            // ~1.5 s without a decode: give the user a specific, actionable hint
+          } else if (failStreak === 30) {
+            // ~1 s without a decode: give the user a specific, actionable hint
             statusEl.textContent =
               dec.error === "FindersNotFound"
                 ? "no QR in view — move closer and fill the square"

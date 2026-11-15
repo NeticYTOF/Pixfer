@@ -202,8 +202,11 @@ function runScenario(name, opts, seconds = 2) {
   const frame = opts.frame || core.newFrame("Chunk", 4242, 7, 12, new Uint8Array(core.RS_K).fill(0x37));
   const qr = qrEncode(frame);
   const motion = makeMotion(opts.motion || "static");
+  const fps = opts.fps || FPS;
+  const frameMs = 1000 / fps;
+  const phaseMs = opts.phaseMs || FLASH_PHASE_MS;
 
-  const frames = Math.round(seconds * FPS);
+  const frames = Math.round(seconds * fps);
   let decodes = 0;
   let cleanFrames = 0; // frames whose exposure fell inside one flash phase
   let decodeMs = 0; // decode-only time (renders are simulation cost, not decode cost)
@@ -215,9 +218,9 @@ function runScenario(name, opts, seconds = 2) {
   const errors = {};
 
   for (let f = 0; f < frames; f++) {
-    const t = f * FRAME_MS + (rng() - 0.5) * 3; // real cameras jitter frame times
-    const phaseStart = Math.floor(t / FLASH_PHASE_MS) * FLASH_PHASE_MS;
-    const boundary = phaseStart + FLASH_PHASE_MS;
+    const t = f * frameMs + (rng() - 0.5) * 3; // real cameras jitter frame times
+    const phaseStart = Math.floor(t / phaseMs) * phaseMs;
+    const boundary = phaseStart + phaseMs;
     const fracInFirstPhase = Math.max(0, Math.min(1, (boundary - t) / opts.exposureMs));
     const isClean = fracInFirstPhase >= 1 || fracInFirstPhase <= 0;
     if (isClean) cleanFrames++;
@@ -367,6 +370,29 @@ test("camera sim: hand shake — drift, tremor, rotation wobble", () => {
   // the affine grid tracks rotation; drift keeps the code in frame; the
   // loop protocol recovers whatever this drops
   assert.ok(r.rate >= 0.25, `rate ${(r.rate * 100).toFixed(0)}% < 25%`);
+});
+
+test("camera sim: dim-room 15 fps camera (long exposures)", () => {
+  // Phones silently drop to 10-15 fps in dim rooms, stretching each
+  // exposure to ~66 ms — a third of a 200 ms flash phase. Most captures
+  // still land clean, and the numbered-frame loop covers the rest.
+  const r = runScenario("low-fps", {
+    boxPx: 560, motion: "static", rot: 0, blurSigma: 1.2, noiseSigma: 10, wb: [1.05, 1.0, 0.97],
+    brightness: 0.85, exposureMs: 66, jitterPx: 3, seed: 1001, fps: 15,
+  }, 1.5);
+  assert.ok(r.rate >= 0.4, `rate ${(r.rate * 100).toFixed(0)}% < 40%`);
+});
+
+test("camera sim: slow camera rescued by the suggested flash phase", () => {
+  // A 5 fps dim-room camera integrates ~200 ms per frame — the full frame
+  // period, which blends most captures across the default 200 ms phase.
+  // The receiver's suggestion formula says 800 ms (4 frame periods);
+  // with it most capture windows sit inside a single phase.
+  const r = runScenario("slow-camera", {
+    boxPx: 560, motion: "static", rot: 0, blurSigma: 1.2, noiseSigma: 10, wb: [1.05, 1.0, 0.97],
+    brightness: 0.85, exposureMs: 200, jitterPx: 3, seed: 1100, fps: 5, phaseMs: 800,
+  }, 2);
+  assert.ok(r.rate >= 0.35, `rate ${(r.rate * 100).toFixed(0)}% < 35%`);
 });
 
 test("camera sim: sender catches the receiver's Done reply", () => {

@@ -9,14 +9,16 @@ import * as core from "./core.js";
 // frame. Prefers requestVideoFrameCallback (Chrome 107+); falls back to
 // requestAnimationFrame polling.
 export async function openCamera(video, onFrame) {
-  // Ask for the highest resolution the device will give — at phone-to-phone
-  // distance the QR covers only ~20% of the frame, and every extra pixel
-  // is another half a module of detail for the decoder.
+  // Ask for the highest resolution AND a solid frame rate. Phones
+  // silently deliver 10-15 fps when the resolution ask is unconstrained
+  // or in dim rooms (long exposure per frame) — and the flash capture
+  // budget depends on exposure being short relative to a 200 ms phase.
   const stream = await navigator.mediaDevices.getUserMedia({
     video: {
       facingMode: "environment",
       width: { ideal: 1920 },
       height: { ideal: 1080 },
+      frameRate: { ideal: 30 },
     },
     audio: false,
   });
@@ -137,6 +139,7 @@ export const QR_DARK_COLORS = [
 export function makeEmitter(canvas) {
   const ctx = canvas.getContext("2d");
   const pal = core.PALETTE;
+  let flashPhaseMs = FLASH_PHASE_MS; // settable for slow cameras (see setFlashPhase)
   let blocksRef = null; // static (idle) blocks
   let flash = null; // { normal, inverse } when flashing a session frame
   let flashQr = null; // { data (0/1 modules), size, rot } when flashing a QR code
@@ -229,7 +232,7 @@ export function makeEmitter(canvas) {
     if (!running) return;
     if (flash || flashQr) {
       const now = performance.now();
-      if (now - lastToggle >= FLASH_PHASE_MS) {
+      if (now - lastToggle >= flashPhaseMs) {
         lastToggle = now;
         phase = !phase;
         dirty = true; // repaint only on phase flips, not every rAF tick
@@ -237,6 +240,13 @@ export function makeEmitter(canvas) {
     }
     paint();
     requestAnimationFrame(tick);
+  }
+
+  // Set the flash phase duration (ms). Slow cameras integrate long
+  // exposures — the receiver measures its own fps and tells the user a
+  // value to type here, so captures stop blending across the phase flip.
+  function setFlashPhase(ms) {
+    flashPhaseMs = Math.max(50, Math.round(ms));
   }
 
   function setBlocks(blocks) {
@@ -284,6 +294,7 @@ export function makeEmitter(canvas) {
     setBlocks,
     setFrame,
     setQr,
+    setFlashPhase,
     stop() {
       running = false;
       flash = null;
