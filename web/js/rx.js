@@ -38,7 +38,6 @@ export function mountRx(root, fflate, onBack) {
   // as a QR (a single solid blob has fill ratio ~1 and is excluded by the
   // finder filter).
   const idleBlocks = () => new Uint8Array(core.GRID_W * core.GRID_H).fill(0);
-  const emitter = makeEmitter(emitCanvas);
   emitter.setBlocks(idleBlocks());
   let pongTimer = null;
   let doneTimer = null;
