@@ -293,8 +293,10 @@ body {
   .mode-card svg { width: 26px; height: 26px; }
   .mode-card .mc-sub { display: block; }
   #tx-view .cam-preview { width: 88px; }
-  .bar { flex-wrap: nowrap; }
-  .filepick span { max-width: 34vw; }
+  /* the send bar (file chip + flash box + meta) must wrap, not clip,
+     on a 390 px phone */
+  .bar { flex-wrap: wrap; }
+  .filepick span { max-width: 40vw; }
 }
 @media (min-width: 900px) {
   .landing-inner { gap: 36px; }

@@ -6,6 +6,7 @@
 import * as core from "../js/core.js";
 import { qrEncode } from "../js/qr.js";
 import { qrDecodeFromPixels } from "../js/qrdecode.js";
+import { suggestFlashPhase } from "../js/rx.js";
 
 let pass = 0;
 let fail = 0;
@@ -141,6 +142,18 @@ function roundTrip(frame) {
     "guard drops decoded out-of-range chunk",
     !core.validChunkMeta(1234, 1234, 0)
   );
+}
+
+// ---------- 4) flash-phase suggestion (receiver guides the sender) ----------
+{
+  check("suggestFlashPhase: 30 fps stays at the 200 default", suggestFlashPhase(30) === 200);
+  check("suggestFlashPhase: 15 fps → 300", suggestFlashPhase(15) === 300);
+  check("suggestFlashPhase: 10 fps → 400", suggestFlashPhase(10) === 400);
+  check("suggestFlashPhase: 5 fps → 800", suggestFlashPhase(5) === 800);
+  check("suggestFlashPhase: 2 fps → 2000", suggestFlashPhase(2) === 2000);
+  check("suggestFlashPhase: caps at 4000", suggestFlashPhase(1) === 4000);
+  check("suggestFlashPhase: guards bad input", suggestFlashPhase(0) === 4000 && suggestFlashPhase(-5) === 4000);
+  check("suggestFlashPhase: never below 200", suggestFlashPhase(120) === 200);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

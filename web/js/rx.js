@@ -22,7 +22,7 @@ const DONE_FLASH_MS = 30000; // stop flashing Done after this; the sender has se
 // Exposure stretches toward the frame period in dim rooms; a phase of
 // ~4 frame periods keeps most capture windows inside a single flash
 // phase, so captures stop blending into a smear.
-function suggestFlashPhase(fps) {
+export function suggestFlashPhase(fps) {
   const v = Math.ceil((4 * 1000) / Math.max(1, fps) / 100) * 100;
   return Math.max(200, Math.min(4000, v));
 }
@@ -56,6 +56,8 @@ export function mountRx(root, fflate, onBack) {
   let chunks = [];
   let totalChunks = 0;
   let totalBytes = 0;
+  let gotCount = 0; // incremental — filtering a 470k-entry array per frame froze big transfers
+  let lastFrameAt = 0; // liveness: a foreign Ping may only take over a DEAD session
   let finished = false;
   let camHandle = null;
 
@@ -129,6 +131,8 @@ export function mountRx(root, fflate, onBack) {
           : " — allow camera access and try again");
     });
 
+  // kept for the fail-hint path only; the progress/status path is
+  // incremental now (gotCount) — this full scan is used nowhere hot
   function missingList() {
     const out = [];
     for (let i = 0; i < totalChunks; i++) if (!chunks[i]) out.push(i);
@@ -169,6 +173,8 @@ export function mountRx(root, fflate, onBack) {
     totalChunks = total;
     chunks = new Array(total).fill(null);
     totalBytes = 0;
+    gotCount = 0;
+    lastFrameAt = performance.now();
     finished = false;
     session = core.newFrame("Pong", sid, 0, total, null);
     statusEl.textContent = "sender detected — " + total + " frames, collecting…";
@@ -178,9 +184,14 @@ export function mountRx(root, fflate, onBack) {
     if (f.kind === "Ping") {
       // A Ping is the only way a foreign/new transfer may take over —
       // even after a finished transfer (send a second file without
-      // going back to the landing screen).
+      // going back to the landing screen). But it may not steal a
+      // transfer that is still alive (another pair's sender in the same
+      // room pings every pass): only a session with no decoded frames
+      // for ~2 s is fair game.
       if (f.totalChunks < 1 || f.totalChunks > core.maxChunkCount()) return; // corrupt/allocation guard
       const sameSession = session && f.sessionId === sessionId && f.totalChunks === totalChunks;
+      const liveSession = session && !finished && performance.now() - lastFrameAt < 2000;
+      if (!sameSession && liveSession) return;
       if (!sameSession || finished) ensureSession(f.sessionId, f.totalChunks);
       flashBriefly(core.newFrame("Pong", f.sessionId, 0, f.totalChunks, null));
       return;
@@ -196,22 +207,28 @@ export function mountRx(root, fflate, onBack) {
       // joined mid-pass: the first frame we ever catch is a Chunk
       ensureSession(f.sessionId, f.totalChunks);
     }
+    lastFrameAt = performance.now();
 
     if (!chunks[f.chunkIdx]) {
       chunks[f.chunkIdx] = f.payload;
       totalBytes += f.payload.length;
+      gotCount++;
     }
-    const got = chunks.filter(Boolean).length;
     if (totalChunks > 0) {
-      progressFill.style.width = (got / totalChunks) * 100 + "%";
+      progressFill.style.width = (gotCount / totalChunks) * 100 + "%";
     }
-    if (got < totalChunks) {
+    if (gotCount < totalChunks) {
       // frame numbers make the losses visible: list up to 12 missing
-      const missing = missingList();
-      const shown = missing.slice(0, 12).map((i) => i + 1).join(", ");
+      // (early-exit — a 470k-chunk transfer must not scan the whole
+      // array on every frame just to render the status)
+      const missingCount = totalChunks - gotCount;
+      const shown = [];
+      for (let i = 0; i < totalChunks && shown.length < 12; i++) {
+        if (!chunks[i]) shown.push(i + 1);
+      }
       statusEl.textContent =
-        got + "/" + totalChunks + " frames — waiting for " +
-        (missing.length > 12 ? shown + ", …" : shown) +
+        gotCount + "/" + totalChunks + " frames — waiting for " +
+        (missingCount > 12 ? shown.join(", ") + ", …" : shown.join(", ")) +
         " to come around again";
     } else {
       finish();
@@ -232,10 +249,17 @@ export function mountRx(root, fflate, onBack) {
       }
     }
     if (isZip(out)) {
-      const files = fflate.unzipSync(out);
-      const name = Object.keys(files)[0];
-      downloadBlob(new Blob([files[name]], { type: "application/octet-stream" }), name);
-      statusEl.textContent = "saved " + name;
+      try {
+        const files = fflate.unzipSync(out);
+        const name = Object.keys(files)[0];
+        if (!name) throw new Error("empty zip");
+        downloadBlob(new Blob([files[name]], { type: "application/octet-stream" }), name);
+        statusEl.textContent = "saved " + name;
+      } catch (e) {
+        // A corrupt container must not leave a blank page — say what
+        // happened and still flash Done so the sender stops looping.
+        statusEl.textContent = "file didn't survive the trip — ask the sender to try again";
+      }
     } else {
       downloadBlob(new Blob([out], { type: "application/octet-stream" }), "pixfer-file.bin");
       statusEl.textContent = "saved";
@@ -245,7 +269,6 @@ export function mountRx(root, fflate, onBack) {
     if (pongTimer) clearTimeout(pongTimer);
     if (doneTimer) clearTimeout(doneTimer);
     emitter.setQr(qrEncode(core.newFrame("Done", sessionId, 0, totalChunks, null)));
-    if (doneTimer) clearTimeout(doneTimer);
     doneTimer = setTimeout(() => {
       emitter.setBlocks(idleBlocks());
       if (session) statusEl.textContent = "saved — you can go back, or wait for another transfer";

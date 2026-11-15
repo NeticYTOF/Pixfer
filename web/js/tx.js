@@ -57,6 +57,13 @@ export function mountTx(root, fflate, onBack) {
   // whole phases at any setting
   let pingDwell = PING_DWELL_MS;
   let chunkDwell = CHUNK_DWELL_MS;
+  // Decode throttle for the camera callback (mirrors rx.js): decoding
+  // every frame on a slow phone backs up the loop and drops more frames.
+  let decodeStride = 1;
+  let frameTick = 0;
+  // File-pick re-entry guard: picking file B while file A is still being
+  // read must not let A's late continuation kill B's transfer.
+  let runToken = 0;
 
   function setStatus(t) {
     statusEl.textContent = t;
@@ -120,6 +127,7 @@ export function mountTx(root, fflate, onBack) {
   }
 
   fileInput.addEventListener("change", async () => {
+    const myRun = ++runToken;
     const file = fileInput.files && fileInput.files[0];
     fileInput.value = ""; // re-picking the same file must fire "change" again
     if (!file) return;
@@ -133,9 +141,10 @@ export function mountTx(root, fflate, onBack) {
     try {
       raw = new Uint8Array(await file.arrayBuffer());
     } catch (e) {
-      setStatus("could not read the file: " + e.message);
+      if (myRun === runToken) setStatus("could not read the file: " + e.message);
       return;
     }
+    if (myRun !== runToken) return; // a newer pick superseded this one
     const plan = core.transferPlan(file.size);
     if (plan.shouldZip) {
       try {
@@ -164,6 +173,7 @@ export function mountTx(root, fflate, onBack) {
       "s per pass";
     progressFill.style.width = "0%";
 
+    if (myRun !== runToken) return; // superseded during read/zip — don't take over the loop
     stopLoop();
     pass = 0;
     cursor = -1;
@@ -174,21 +184,28 @@ export function mountTx(root, fflate, onBack) {
     looping = true;
     if (releaseWake) releaseWake();
     releaseWake = await keepScreenAwake();
+    if (myRun !== runToken) return; // superseded while acquiring the wake lock
 
     if (!camHandle) {
       try {
         camHandle = await openCamera(camVideo, (video) => {
           // Read the receiver's flashed QR codes (Pong / Done).
+          frameTick++;
+          if (frameTick % decodeStride !== 0) return;
+          const t0 = performance.now();
           const dec = qrDecodeVideo(video);
+          const ms = performance.now() - t0;
+          decodeStride = ms > 66 ? 3 : ms > 33 ? 2 : 1;
           if (dec.ok) route(dec.frame);
         });
+        if (myRun !== runToken) return; // superseded while opening the camera
         stepLoop();
       } catch (e) {
         setStatus(
           "camera unavailable (" + e.message + ") — still sending, but the Done signal can't be seen." +
             (typeof window !== "undefined" && !window.isSecureContext ? " Camera needs https:// or localhost." : "")
         );
-        stepLoop(); // camera is optional in loop mode
+        if (myRun === runToken) stepLoop(); // camera is optional in loop mode
       }
     } else {
       stepLoop();
