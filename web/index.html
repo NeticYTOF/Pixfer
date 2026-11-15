@@ -58,11 +58,19 @@
         <span id="tx-filename">choose a file</span>
       </label>
       <label class="flashset" title="flash phase in ms — the receiver names the value to type here when its camera is slow">flash <input id="tx-flash" type="number" inputmode="numeric" min="100" max="4000" step="100" value="200" /> ms</label>
-      <label class="flashset" title="payload per QR frame — bigger frames mean fewer frames for the same file, but need a steadier, closer receiver">size
+      <label class="flashset" title="payload per QR frame — color frames pack 2 bits per module">size
         <select id="tx-framesize">
-          <option value="standard" selected>223 B</option>
-          <option value="big">643 B</option>
-          <option value="max">974 B</option>
+          <option value="standard" selected>646 B</option>
+          <option value="big">1761 B</option>
+          <option value="max">2653 B</option>
+        </select>
+      </label>
+      <label class="flashset" title="codes flashed at once — multiplies throughput; needs a bigger sender screen">codes
+        <select id="tx-codes">
+          <option value="1" selected>1</option>
+          <option value="2">2</option>
+          <option value="4">4</option>
+          <option value="6">6</option>
         </select>
       </label>
       <span id="tx-meta" class="bar-meta"></span>

@@ -4,6 +4,7 @@
 // wire format in core.js.
 
 import * as core from "./core.js";
+import { COLOR_HUES } from "./qr.js";
 
 // Open the environment (back) camera and call onFrame(video) on every new
 // frame. Prefers requestVideoFrameCallback (Chrome 107+); falls back to
@@ -149,7 +150,8 @@ export function makeEmitter(canvas) {
   let flashPhaseMs = FLASH_PHASE_MS; // settable for slow cameras (see setFlashPhase)
   let blocksRef = null; // static (idle) blocks
   let flash = null; // { normal, inverse } when flashing a session frame
-  let flashQr = null; // { data (0/1 modules), size, rot } when flashing a QR code
+  let flashQr = null; // { data (0/1 or color 0..4 modules), size, rot, colorMode } when flashing a QR code
+  let flashGrid = null; // { qrs: [...], cols, rows } when flashing a multi-QR grid
   let qrRot = 0; // per-QR palette rotation for the color cycle
   let phase = false; // false = normal (colored-on-white), true = inverted
   let lastToggle = 0;
@@ -158,46 +160,79 @@ export function makeEmitter(canvas) {
   let dirty = false;
   let running = false;
 
+  // Fill one QR into a cell of the canvas. Handles both frame formats:
+  // legacy 0/1 matrices (decorative rotating palette on dark modules) and
+  // color frames (values: 0 light, 1 black, 2..4 = COLOR_HUES[value-1]).
+  // The inverted flash phase swaps the background and channel-complements
+  // every color.
+  function paintQrInCell(qr, cellX, cellY, cellW, cellH, rot) {
+    const n = qr.size;
+    const quiet = qr.colorMode ? 2 : QR_QUIET_MODULES; // grid cells get tighter quiet zones
+    const units = n + 2 * quiet;
+    const mp = Math.max(1, Math.floor(Math.min(cellW, cellH) / units));
+    const box = mp * units;
+    const ox = Math.floor(cellX + (cellW - box) / 2) + quiet * mp;
+    const oy = Math.floor(cellY + (cellH - box) / 2) + quiet * mp;
+    const data = qr.data;
+    const k = QR_DARK_COLORS.length;
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) {
+        const val = data[r * n + c];
+        if (!val) continue; // light module: background in both phases
+        if (phase) {
+          // inverted flash: dark values render as their channel
+          // complements — exactly what the receiver's hue classifier
+          // compensates for
+          if (qr.colorMode) {
+            if (val === 1) ctx.fillStyle = "rgb(255,255,255)";
+            else {
+              const h = COLOR_HUES[val - 1];
+              ctx.fillStyle = `rgb(${255 - h[0]},${255 - h[1]},${255 - h[2]})`;
+            }
+          } else {
+            ctx.fillStyle = "rgb(255,255,255)";
+          }
+        } else if (qr.colorMode) {
+          if (val === 1) ctx.fillStyle = "rgb(0,0,0)";
+          else {
+            const h = COLOR_HUES[val - 1];
+            ctx.fillStyle = `rgb(${h[0]},${h[1]},${h[2]})`;
+          }
+        } else {
+          const col = QR_DARK_COLORS[(r * 7 + c * 11 + rot) % k];
+          ctx.fillStyle = `rgb(${col[0]},${col[1]},${col[2]})`;
+        }
+        ctx.fillRect(ox + c * mp, oy + r * mp, mp, mp);
+      }
+    }
+  }
+
   function paint() {
     const w = canvas.width;
     const h = canvas.height;
     if (w === 0 || h === 0) return;
-    if (flashQr) {
-      // QR render: a centered square with a quiet zone — like a traditional
-      // QR code sitting on the screen, not a full-screen grid. Normal phase
-      // = dark modules in rotating palette colors on white; inverted phase
-      // = white modules on black (the flash).
+    const grid = flashGrid;
+    const single = flashQr;
+    if (grid || single) {
       if (w === lastW && h === lastH && !dirty) return;
       lastW = w;
       lastH = h;
       dirty = false;
-      const n = flashQr.size;
-      const units = n + 2 * QR_QUIET_MODULES;
-      const mp = Math.max(1, Math.floor(Math.min(w, h) / units));
-      const box = mp * units;
-      const ox = Math.floor((w - box) / 2);
-      const oy = Math.floor((h - box) / 2);
       const bg = phase ? 0 : 255;
       ctx.fillStyle = `rgb(${bg},${bg},${bg})`;
       ctx.fillRect(0, 0, w, h);
-      const data = flashQr.data;
-      const rot = flashQr.rot | 0;
-      const k = QR_DARK_COLORS.length;
-      for (let r = 0; r < n; r++) {
-        for (let c = 0; c < n; c++) {
-          if (!data[r * n + c]) continue;
-          if (phase) {
-            ctx.fillStyle = "rgb(255,255,255)";
-          } else {
-            const col = QR_DARK_COLORS[(r * 7 + c * 11 + rot) % k];
-            ctx.fillStyle = `rgb(${col[0]},${col[1]},${col[2]})`;
-          }
-          ctx.fillRect(
-            ox + (c + QR_QUIET_MODULES) * mp,
-            oy + (r + QR_QUIET_MODULES) * mp,
-            mp,
-            mp
-          );
+      if (single) {
+        paintQrInCell(single, 0, 0, w, h, single.rot | 0);
+      } else {
+        const cols = grid.cols;
+        const rows = grid.rows;
+        const cw = w / cols;
+        const chh = h / rows;
+        for (let i = 0; i < grid.qrs.length; i++) {
+          const qr = grid.qrs[i];
+          const gx = i % cols;
+          const gy = (i / cols) | 0;
+          paintQrInCell(qr, gx * cw, gy * chh, cw, chh, (qrRot + i) | 0);
         }
       }
       return;
@@ -237,7 +272,7 @@ export function makeEmitter(canvas) {
 
   function tick() {
     if (!running) return;
-    if (flash || flashQr) {
+    if (flash || flashQr || flashGrid) {
       const now = performance.now();
       if (now - lastToggle >= flashPhaseMs) {
         lastToggle = now;
@@ -260,6 +295,7 @@ export function makeEmitter(canvas) {
     blocksRef = blocks;
     flash = null;
     flashQr = null;
+    flashGrid = null;
     dirty = true;
     if (!running) {
       running = true;
@@ -282,11 +318,32 @@ export function makeEmitter(canvas) {
   }
 
   // Flash an actual QR code: alternate colored-on-white / white-on-black.
-  // `qr` = { data: Uint8Array of 0/1 modules, size: N }. Each new QR shifts
-  // the color rotation so consecutive frames cycle through the palette.
+  // `qr` = { data, size, colorMode? } — legacy 0/1 matrices or color 0..4.
+  // Each new QR shifts the color rotation so consecutive frames cycle
+  // through the palette.
   function setQr(qr) {
     qrRot = (qrRot + 1) % QR_DARK_COLORS.length;
-    flashQr = { data: qr.data, size: qr.size, rot: qrRot };
+    flashQr = { data: qr.data, size: qr.size, colorMode: !!qr.colorMode, rot: qrRot };
+    flashGrid = null;
+    flash = null;
+    phase = false;
+    lastToggle = performance.now();
+    dirty = true;
+    if (!running) {
+      running = true;
+      requestAnimationFrame(tick);
+    }
+  }
+
+  // Flash several codes at once (multi-QR grid). `qrs` is the array of
+  // encoded matrices for this dwell; the layout (cols x rows) is fixed by
+  // the grid capacity so positions stay steady across frames — the
+  // receiver's warm-start geometry cache exploits exactly that.
+  function setQrGrid(qrs, cols, rows) {
+    if (!qrs || !qrs.length) return;
+    qrRot = (qrRot + 1) % QR_DARK_COLORS.length;
+    flashQr = null;
+    flashGrid = { qrs, cols, rows };
     flash = null;
     phase = false;
     lastToggle = performance.now();
@@ -301,11 +358,13 @@ export function makeEmitter(canvas) {
     setBlocks,
     setFrame,
     setQr,
+    setQrGrid,
     setFlashPhase,
     stop() {
       running = false;
       flash = null;
       flashQr = null;
+      flashGrid = null;
     },
   };
 }

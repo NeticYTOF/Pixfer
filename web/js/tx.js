@@ -13,7 +13,7 @@
 
 import * as core from "./core.js";
 import { openCamera, makeEmitter, fitCanvas, keepScreenAwake, FLASH_PHASE_MS } from "./light.js";
-import { qrEncode, qrCapacityBytes } from "./qr.js";
+import { qrEncode, qrCapacityBytes, colorEncode, colorCapacity } from "./qr.js";
 import { qrDecodeVideo } from "./qrdecode.js";
 
 // Default frame dwells in whole flash phases. The flash phase itself is
@@ -24,19 +24,29 @@ export const PING_DWELL_MS = FLASH_PHASE_MS;
 export const CHUNK_DWELL_MS = FLASH_PHASE_MS * 2;
 const MAX_PASSES = 40; // safety cap if the receiver never flashes Done
 
-// Frame-size presets: more payload per QR = fewer frames for the same
-// file, traded against module size (bigger version = smaller modules =
-// the receiver must be closer/steadier). Payloads derive from the actual
-// table capacity at EC level M minus the 23-byte PIXF header, so they can
-// never drift from what the encoder can carry.
+// Frame-size presets: COLOR frames pack 2 bits per data module (four dark
+// hues) with RS(255,223) coding over the whole data region — roughly 3x
+// the legacy QR payload at the same version. Payloads derive from the
+// actual table capacity at runtime, so they can never drift from what the
+// encoder can carry. Traded against module size: bigger versions need a
+// closer/steadier receiver.
 export const FRAME_PRESETS = {
-  standard: { version: 11, label: "223 B/frame" },
-  big: { version: 20, label: "643 B/frame" },
-  max: { version: 25, label: "974 B/frame" },
+  standard: { version: 11 },
+  big: { version: 20 },
+  max: { version: 25 },
 };
 function presetPayload(version) {
-  return qrCapacityBytes(version) - core.HEADER_BYTES;
+  return colorCapacity(version).payloadBytes;
 }
+
+// Grid layouts: how many codes flash at once. Bigger screens win big —
+// a 6-code grid multiplies throughput 6x; phones should stay at 1-2.
+const GRID_LAYOUTS = {
+  1: { cols: 1, rows: 1 },
+  2: { cols: 2, rows: 1 },
+  4: { cols: 2, rows: 2 },
+  6: { cols: 3, rows: 2 },
+};
 
 export function mountTx(root, fflate, onBack) {
   const canvas = root.querySelector("#tx-canvas");
@@ -71,8 +81,11 @@ export function mountTx(root, fflate, onBack) {
   // whole phases at any setting
   let pingDwell = PING_DWELL_MS;
   let chunkDwell = CHUNK_DWELL_MS;
-  // frame size: the sender's data-per-frame setting (bigger QR versions)
+  // frame size: the sender's data-per-frame setting (color QR versions)
   let chunkSize = presetPayload(FRAME_PRESETS.standard.version);
+  let frameVersion = FRAME_PRESETS.standard.version;
+  // grid: how many codes flash simultaneously
+  let gridCodes = 1;
   // Decode throttle for the camera callback (mirrors rx.js): decoding
   // every frame on a slow phone backs up the loop and drops more frames.
   let decodeStride = 1;
@@ -102,18 +115,40 @@ export function mountTx(root, fflate, onBack) {
     return data.subarray(start, end);
   }
 
-  function frameForCursor() {
-    if (cursor < 0) return core.newFrame("Ping", session.sessionId, 0, totalChunks, null);
-    const f = core.newFrame("Chunk", session.sessionId, cursor, totalChunks, null);
-    f.payload = chunkPayload(cursor);
-    return f;
+  // Encode the frames for the current cursor: the ping phase stays a
+  // single legacy QR (v2 — maximally reliable session join); chunk phases
+  // flash a grid of COLOR frames.
+  function showCurrent() {
+    if (cursor < 0) {
+      emitter.setQr(qrEncode(core.newFrame("Ping", session.sessionId, 0, totalChunks, null)));
+      return;
+    }
+    const count = Math.min(gridCodes, totalChunks - cursor);
+    const qrs = [];
+    for (let k = 0; k < count; k++) {
+      const f = core.newFrame("Chunk", session.sessionId, cursor + k, totalChunks, null);
+      f.payload = chunkPayload(cursor + k);
+      const enc = colorEncode(f, frameVersion);
+      if (!enc) {
+        // payload exceeded the color frame (shouldn't happen — chunkSize
+        // derives from the same capacity) — fall back to legacy QR
+        qrs.push(qrEncode(f));
+      } else {
+        qrs.push(enc);
+      }
+    }
+    const layout = GRID_LAYOUTS[gridCodes];
+    if (qrs.length === 1 && gridCodes === 1) {
+      emitter.setQr(qrs[0]);
+    } else {
+      emitter.setQrGrid(qrs, layout.cols, layout.rows);
+    }
   }
 
-  // Flash the current frame for its dwell, then advance the cursor.
+  // Flash the current frame(s) for their dwell, then advance the cursor.
   function stepLoop() {
     if (!looping) return;
-    const f = frameForCursor();
-    emitter.setQr(qrEncode(f));
+    showCurrent();
     if (cursor < 0) {
       setStatus(
         (pongSeen ? "receiver is listening — looping frames… " : "waiting for a receiver… ") +
@@ -126,9 +161,10 @@ export function mountTx(root, fflate, onBack) {
       );
       progressFill.style.width = (((cursor + 1) / totalChunks) * 100) + "%";
     }
+    const shown = cursor < 0 ? 1 : Math.min(gridCodes, totalChunks - cursor);
     dwellTimer = setTimeout(() => {
       if (!looping) return;
-      cursor++;
+      cursor += shown;
       if (cursor >= totalChunks) {
         cursor = -1;
         pass++;
@@ -199,10 +235,12 @@ export function mountTx(root, fflate, onBack) {
       return;
     }
     // bytes/second assumes the receiver catches at least one phase per frame
-    const bps = (chunkSize * 1000) / chunkDwell;
+    const perDwell = chunkSize * gridCodes;
+    const bps = (perDwell * 1000) / chunkDwell;
     metaEl.textContent =
-      chunkSize + " B/frame · " + totalChunks + " frames · ~" +
-      ((pingDwell + totalChunks * chunkDwell) / 1000).toFixed(1) +
+      chunkSize + " B × " + gridCodes + (gridCodes > 1 ? " codes = " + perDwell + " B" : " B") +
+      "/dwell · " + totalChunks + " frames · ~" +
+      ((pingDwell + Math.ceil(totalChunks / gridCodes) * chunkDwell) / 1000).toFixed(1) +
       "s per pass · ~" + (bps / 1024).toFixed(1) + " KB/s";
   }
 
@@ -264,7 +302,8 @@ export function mountTx(root, fflate, onBack) {
   const sizeSel = root.querySelector("#tx-framesize");
   sizeSel.addEventListener("change", () => {
     const preset = FRAME_PRESETS[sizeSel.value] || FRAME_PRESETS.standard;
-    chunkSize = presetPayload(preset.version);
+    frameVersion = preset.version;
+    chunkSize = presetPayload(frameVersion);
     if (data && data.length > 0 && totalChunks > 0) {
       // re-chunk the SAME file with the new size and restart the loop —
       // a fresh session id makes the receiver reset cleanly on the next
@@ -273,10 +312,23 @@ export function mountTx(root, fflate, onBack) {
       updateMeta();
       startLoop();
       setStatus(
-        "switched to " + chunkSize + " B/frame (" + totalChunks + " frames) — looping again"
+        "switched to " + chunkSize + " B color frames (" + totalChunks + " frames) — looping again"
       );
     } else {
       setStatus("frame size " + chunkSize + " B — pick a file to send");
+    }
+  });
+
+  const codesSel = root.querySelector("#tx-codes");
+  codesSel.addEventListener("change", () => {
+    const n = Number(codesSel.value);
+    gridCodes = GRID_LAYOUTS[n] ? n : 1;
+    if (data && data.length > 0 && totalChunks > 0) {
+      updateMeta();
+      startLoop();
+      setStatus(gridCodes + " code" + (gridCodes > 1 ? "s" : "") + " per dwell — looping again");
+    } else {
+      updateMeta();
     }
   });
 

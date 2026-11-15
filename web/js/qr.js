@@ -370,8 +370,8 @@ function placeVersionInfo(m, version) {
   }
 }
 
-function placeFormatBits(m, mask) {
-  const data5 = (0b00 << 3) | mask; // EC level M = 00
+function placeFormatBits(m, mask, ecBits = 0) {
+  const data5 = (ecBits << 3) | mask; // legacy frames: EC level M (00); color frames: Q (11) as the format tag
   const fmt = bch15(data5);
   const n = m.size;
   for (let i = 0; i < 15; i++) {
@@ -390,6 +390,25 @@ function placeFormatBits(m, mask) {
 
 // Standard QR data placement: zigzag through 2-column strips from the
 // bottom-right, skipping the timing column (col 6), alternating direction.
+export function dataCellOrder(n, reserved) {
+  const cells = [];
+  let upward = true;
+  for (let c = n - 1; c > 0; c -= 2) {
+    if (c === 6) c--; // skip timing column
+    for (let i = 0; i < n; i++) {
+      const r = upward ? n - 1 - i : i;
+      for (let k = 0; k < 2; k++) {
+        const x = c - k;
+        if (x < 0 || x >= n) continue;
+        if (!reserved[r * n + x]) cells.push(r * n + x);
+      }
+    }
+    upward = !upward;
+  }
+  return cells;
+}
+
+// Same zigzag as dataCellOrder, placing QR codeword bits (legacy path).
 function placeData(m, codewords) {
   const n = m.size;
   const bits = [];
@@ -555,4 +574,91 @@ export function qrEncode(frame) {
     }
   }
   return { version, size: n, data: best.data };
+}
+
+// ---------- color frames: 2 bits per data module ----------
+// Data modules carry one of four dark hues (2 bits each) instead of the
+// dark/light bit, while every structure module (finders, timing,
+// alignment, format, version) stays black/white so detection is
+// unchanged. The QR codeword machinery is bypassed entirely — the payload
+// gets our own RS(255,223) coding over the whole data region, which is
+// far denser than the QR EC-M layout. Color frames self-identify through
+// the format-info EC bits (Q position) — the decoder reads the same word
+// it already validates for polarity, at zero extra capture cost.
+//
+// Matrix values: 0 = light, 1..3 = hue index, 4 = black structure.
+export const COLOR_HUES = [
+  [0, 0, 0], // 0: black
+  [200, 0, 0], // 1: red
+  [0, 180, 0], // 2: green
+  [0, 0, 200], // 3: blue
+];
+
+// Capacity of a color frame: unreserved cells x 2 bits, packed into
+// RS(255,223) blocks (223 data + 32 parity each). The PIXF header rides
+// inside the first block's data bytes, so payloadBytes already accounts
+// for it.
+export function colorCapacity(version) {
+  const n = 17 + 4 * version;
+  const reserved = buildReserved(version);
+  let cells = 0;
+  for (let i = 0; i < n * n; i++) if (!reserved[i]) cells++;
+  const byteCap = Math.floor((cells * 2) / 8);
+  const blocks = Math.floor(byteCap / 255);
+  return { cells, byteCap, blocks, payloadBytes: blocks * 223 - core.HEADER_BYTES };
+}
+
+// Encode a pixfer frame as a color QR matrix. The PIXF bytes are split
+// into 223-byte blocks, RS(255,223)-coded (parity-first layout, matching
+// qrRsParity's systematic convention), and the codeword stream is packed
+// MSB-first into the data cells as 2-bit hue indices in zigzag order.
+//
+// Matrix values: 0 = light, 1..4 = the 2-bit hue index PLUS ONE
+// (1 = black, 2 = red, 3 = green, 4 = blue — COLOR_HUES[value - 1]).
+// Value 0 stays reserved for light so a hue can never alias the
+// background: every data cell is dark by construction, which is what
+// makes the 4-class hue classifier unambiguous. Structure modules share
+// value 1 (black).
+export function colorEncode(frame, version) {
+  const fb = frameBytes(frame);
+  const cap = colorCapacity(version);
+  if (fb.length > cap.blocks * 223) return null; // payload exceeds this version
+  const n = 17 + 4 * version;
+
+  // codeword stream: [parity(32)][data(223)] per block
+  const stream = new Uint8Array(cap.blocks * 255);
+  for (let b = 0; b < cap.blocks; b++) {
+    const d = new Uint8Array(223);
+    const from = b * 223;
+    const take = Math.min(fb.length - from, 223);
+    if (take > 0) d.set(fb.subarray(from, from + take));
+    const parity = qrRsParity(d, 32);
+    stream.set(parity, b * 255);
+    stream.set(d, b * 255 + 32);
+  }
+
+  // structure + function modules as plain black/white first
+  const m = new QrMatrix(n);
+  drawFinders(m);
+  drawTiming(m);
+  drawAlignments(m, version);
+  drawDarkModule(m);
+  placeFormatBits(m, 0, 0b11); // EC=Q position tags the color format
+  placeVersionInfo(m, version);
+
+  const out = new Uint8Array(n * n);
+  for (let i = 0; i < n * n; i++) out[i] = m.data[i] ? 1 : 0; // 1 = black structure
+
+  // data hues in zigzag order: cell j carries stream bits 2j..2j+1,
+  // mapped to matrix value hue+1 so 0 remains "light"
+  const reserved = buildReserved(version);
+  const order = dataCellOrder(n, reserved);
+  for (let j = 0; j < order.length; j++) {
+    const hi = j * 2;
+    const lo = hi + 1;
+    const b0 = (stream[hi >> 3] >> (7 - (hi & 7))) & 1;
+    const b1 = (stream[lo >> 3] >> (7 - (lo & 7))) & 1;
+    out[order[j]] = ((b0 << 1) | b1) + 1;
+  }
+  return { version, size: n, data: out, colorMode: true };
 }
